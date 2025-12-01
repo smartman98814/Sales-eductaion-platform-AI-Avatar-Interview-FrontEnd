@@ -8,7 +8,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: ProcessingInstruction.env.VITE_BACNEND_URL || 'http://localhost:8000',
+        target: 'https://sales-education-platform-with-ai-avatar.onrender.com',
         changeOrigin: true,
       },
     },
