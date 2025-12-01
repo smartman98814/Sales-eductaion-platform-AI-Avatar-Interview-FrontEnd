@@ -24,8 +24,16 @@ export class OpenAIService {
       body: JSON.stringify({ prompt }),
     }, 3, 60000);
     
-    if (response.status === 500) {
-      throw new Error('Server error');
+    if (!response.ok) {
+      let errorMessage = 'Server error';
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.detail || errorData.message || errorMessage;
+      } catch (e) {
+        // If response is not JSON, use status text
+        errorMessage = response.statusText || errorMessage;
+      }
+      throw new Error(errorMessage);
     }
     
     const data = await response.json();
