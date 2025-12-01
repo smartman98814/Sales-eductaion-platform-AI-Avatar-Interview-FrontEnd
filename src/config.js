@@ -4,7 +4,7 @@ export const config = {
     serverUrl: import.meta.env.VITE_HEYGEN_SERVER_URL || 'https://api.heygen.com',
   },
   backend: {
-    baseUrl: import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000',
+    baseUrl: import.meta.env.VITE_BACKEND_URL,
   },
 };
 
