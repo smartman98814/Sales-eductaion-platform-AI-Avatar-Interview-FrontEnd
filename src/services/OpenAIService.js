@@ -16,7 +16,7 @@ export class OpenAIService {
    * @returns {Promise<string>} The AI-generated text response
    */
   async complete(prompt) {
-    const response = await fetchWithRetry(`${this.baseUrl}/api/openai/complete`, {
+    const response = await fetchWithRetry(`${this.baseUrl}/openai/complete`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
