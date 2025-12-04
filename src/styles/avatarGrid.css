@@ -1,0 +1,254 @@
+/* Avatar Grid Styles */
+
+.avatar-grid-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 40px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.grid-title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: white;
+  margin-bottom: 12px;
+  text-align: center;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.grid-subtitle {
+  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 40px;
+  text-align: center;
+}
+
+.avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 30px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.avatar-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px;
+  background: white;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  position: relative;
+}
+
+.avatar-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+}
+
+.avatar-image-container {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  overflow: hidden;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transition: transform 0.3s ease;
+  background: #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.avatar-card:hover .avatar-image-container {
+  transform: scale(1.05);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+}
+
+.avatar-card:hover .avatar-image {
+  transform: scale(1.1);
+}
+
+.avatar-name {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #2d3748;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.avatar-role-short {
+  font-size: 0.9rem;
+  color: #718096;
+  text-align: center;
+  line-height: 1.4;
+}
+
+/* Hover Modal */
+.avatar-modal {
+  position: fixed;
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  width: 360px;
+  pointer-events: none;
+}
+
+/* Modal positioned above the avatar (second row) */
+.avatar-modal.modal-above {
+  transform: translate(-50%, calc(-100% - 20px));
+  animation: modalFadeInAbove 0.2s ease;
+}
+
+@keyframes modalFadeInAbove {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-100% - 10px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, calc(-100% - 20px));
+  }
+}
+
+/* Modal positioned below the avatar (first row) */
+.avatar-modal.modal-below {
+  transform: translate(-50%, 20px);
+  animation: modalFadeInBelow 0.2s ease;
+}
+
+@keyframes modalFadeInBelow {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 20px);
+  }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.modal-avatar-image-container {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: #f0f0f0;
+}
+
+.modal-avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.modal-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #2d3748;
+  margin: 0 0 4px 0;
+}
+
+.modal-role {
+  font-size: 0.85rem;
+  color: #718096;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal-section {
+  font-size: 0.9rem;
+}
+
+.modal-section strong {
+  color: #4a5568;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.modal-section p {
+  color: #718096;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.modal-footer {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 2px solid #e2e8f0;
+  text-align: center;
+}
+
+.modal-footer p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #667eea;
+  font-weight: 600;
+}
+
+/* Responsive Design */
+@media (max-width: 1400px) {
+  .avatar-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (max-width: 1024px) {
+  .avatar-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+  
+  .avatar-image-container {
+    width: 120px;
+    height: 120px;
+  }
+}
+
+@media (max-width: 768px) {
+  .avatar-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+  
+  .grid-title {
+    font-size: 2rem;
+  }
+  
+  .avatar-modal {
+    width: 300px;
+  }
+}
+

@@ -9,7 +9,6 @@
  * @returns {Function} returns.createNewSession - Create a new streaming session
  * @returns {Function} returns.startSession - Start the streaming session
  * @returns {Function} returns.sendTask - Send text task to avatar
- * @returns {Function} returns.talkToAI - Send prompt to AI and speak response
  * @returns {Function} returns.closeSession - Close the current session
  */
 import { useState, useRef, useCallback } from 'react';
@@ -70,15 +69,6 @@ export function useStreamingSession() {
   }, []);
 
   /**
-   * Send a prompt to AI and have avatar speak the response
-   * @param {string} prompt - Prompt for AI
-   * @returns {Promise<Object>} Task response
-   */
-  const talkToAI = useCallback(async (prompt) => {
-    return await sessionManagerRef.current.talkToAI(prompt);
-  }, []);
-
-  /**
    * Close the current session
    * @returns {Promise<void>}
    */
@@ -96,7 +86,6 @@ export function useStreamingSession() {
     createNewSession,
     startSession,
     sendTask,
-    talkToAI,
     closeSession,
   };
 }

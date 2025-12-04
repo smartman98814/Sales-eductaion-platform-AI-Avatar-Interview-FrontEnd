@@ -104,15 +104,12 @@ export class HeyGenService {
     const responseData = await response.json();
     
     if (!response.ok) {
-      let errorMessage = responseData.message || responseData.error || responseData.detail || `Server error (${response.status})`;
-      
-      // Check for quota-related errors
-      const errorStr = errorMessage.toLowerCase();
-      if (errorStr.includes('quota') || errorStr.includes('credit') || errorStr.includes('limit') && errorStr.includes('exceeded')) {
-        errorMessage = 'quota not enough';
-      }
-      
+      const errorMessage = responseData.message || responseData.error || `Server error (${response.status})`;
       throw new Error(errorMessage);
+    }
+
+    if (response.status === 500) {
+      throw new Error('Server error');
     }
 
     return responseData.data;

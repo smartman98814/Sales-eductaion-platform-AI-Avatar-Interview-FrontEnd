@@ -3,7 +3,6 @@
  * Manages streaming session lifecycle and state
  */
 import { heygenService } from '../services/HeyGenService';
-import { openaiService } from '../services/OpenAIService';
 import { WebRTCManager } from './WebRTCManager';
 
 export class SessionManager {
@@ -92,22 +91,6 @@ export class SessionManager {
       throw new Error('Please create a connection first');
     }
     return await heygenService.sendTask(this.sessionInfo.session_id, text);
-  }
-
-  /**
-   * Talk to AI and send response to avatar
-   * @param {string} prompt - Prompt for AI
-   * @returns {Promise<Object>} Task response
-   */
-  async talkToAI(prompt) {
-    if (!this.sessionInfo) {
-      throw new Error('Please create a connection first');
-    }
-    const text = await openaiService.complete(prompt);
-    if (text) {
-      return await heygenService.sendTask(this.sessionInfo.session_id, text);
-    }
-    throw new Error('Failed to get a response from AI');
   }
 
   /**
