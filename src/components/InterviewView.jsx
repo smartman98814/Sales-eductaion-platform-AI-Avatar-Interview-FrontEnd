@@ -96,16 +96,30 @@ export function InterviewView({
         const receivers = peerConnection.getReceivers();
         console.log('Existing receivers:', receivers.length);
         
+        const videoTracks = [];
+        const audioTracks = [];
+        
         for (const receiver of receivers) {
-          if (receiver.track && receiver.track.kind === 'video') {
-            console.log('Found existing video track');
-            const stream = new MediaStream([receiver.track]);
-            videoElement.srcObject = stream;
-            updateStatus('Avatar video stream connected ✓');
-            // Try to play with audio
-            videoElement.play().catch(err => console.log('Play error:', err));
-            return true;
+          if (receiver.track) {
+            console.log('Found track:', receiver.track.kind);
+            if (receiver.track.kind === 'video') {
+              videoTracks.push(receiver.track);
+            } else if (receiver.track.kind === 'audio') {
+              audioTracks.push(receiver.track);
+            }
           }
+        }
+        
+        if (videoTracks.length > 0 || audioTracks.length > 0) {
+          console.log(`Found ${videoTracks.length} video, ${audioTracks.length} audio tracks`);
+          const stream = new MediaStream([...videoTracks, ...audioTracks]);
+          videoElement.srcObject = stream;
+          updateStatus(`Avatar stream connected (Video: ${videoTracks.length}, Audio: ${audioTracks.length}) ✓`);
+          // Try to play with audio
+          videoElement.muted = false;
+          videoElement.volume = 1.0;
+          videoElement.play().catch(err => console.log('Play error:', err));
+          return true;
         }
         return false;
       };
@@ -119,18 +133,46 @@ export function InterviewView({
         console.log('Track kind:', event.track?.kind);
         
         if (event.streams && event.streams[0]) {
-          console.log('Setting video stream from ontrack');
+          console.log('Setting stream from ontrack (includes all tracks)');
           videoElement.srcObject = event.streams[0];
-          updateStatus('Avatar video stream connected ✓');
+          
+          // Log track info
+          const stream = event.streams[0];
+          const videoTracks = stream.getVideoTracks();
+          const audioTracks = stream.getAudioTracks();
+          console.log(`Stream has ${videoTracks.length} video, ${audioTracks.length} audio tracks`);
+          updateStatus(`Avatar stream connected (Video: ${videoTracks.length}, Audio: ${audioTracks.length}) ✓`);
+          
           // Ensure audio is enabled
           videoElement.muted = false;
           videoElement.volume = 1.0;
           videoElement.play().catch(err => console.log('Play error:', err));
         } else if (event.track) {
-          console.log('Setting video track directly');
-          const stream = new MediaStream([event.track]);
-          videoElement.srcObject = stream;
-          updateStatus('Avatar video stream connected ✓');
+          console.log('Adding individual track to stream');
+          // Get existing stream or create new one
+          let stream = videoElement.srcObject;
+          if (!stream) {
+            stream = new MediaStream();
+            videoElement.srcObject = stream;
+          }
+          
+          // Add the new track
+          if (event.track.kind === 'video') {
+            // Replace video tracks
+            stream.getVideoTracks().forEach(t => stream.removeTrack(t));
+            stream.addTrack(event.track);
+            console.log('Added video track');
+          } else if (event.track.kind === 'audio') {
+            // Replace audio tracks
+            stream.getAudioTracks().forEach(t => stream.removeTrack(t));
+            stream.addTrack(event.track);
+            console.log('Added audio track');
+          }
+          
+          const videoTracks = stream.getVideoTracks();
+          const audioTracks = stream.getAudioTracks();
+          updateStatus(`Avatar stream updated (Video: ${videoTracks.length}, Audio: ${audioTracks.length}) ✓`);
+          
           // Ensure audio is enabled
           videoElement.muted = false;
           videoElement.volume = 1.0;
@@ -174,14 +216,36 @@ export function InterviewView({
   const handleEnableAudio = useCallback(async () => {
     if (avatarVideoRef.current) {
       try {
-        avatarVideoRef.current.muted = false;
-        avatarVideoRef.current.volume = 1.0;
-        await avatarVideoRef.current.play();
+        const videoElement = avatarVideoRef.current;
+        
+        // Log stream info
+        if (videoElement.srcObject) {
+          const stream = videoElement.srcObject;
+          const audioTracks = stream.getAudioTracks();
+          const videoTracks = stream.getVideoTracks();
+          console.log('Enabling audio...');
+          console.log('Video tracks:', videoTracks.length, videoTracks);
+          console.log('Audio tracks:', audioTracks.length, audioTracks);
+          
+          if (audioTracks.length === 0) {
+            updateStatus('⚠️ No audio track from HeyGen - avatar may be silent');
+            console.warn('HeyGen stream has no audio tracks!');
+          }
+        }
+        
+        // Force unmute and set volume
+        videoElement.muted = false;
+        videoElement.volume = 1.0;
+        
+        // Ensure it's playing
+        await videoElement.play();
+        
         setAudioEnabled(true);
-        updateStatus('Audio enabled ✓');
+        updateStatus('🔊 Audio enabled ✓');
+        console.log('Audio successfully enabled');
       } catch (error) {
         console.error('Error enabling audio:', error);
-        updateStatus('Click the video to enable audio');
+        updateStatus('Click the avatar video to enable audio');
       }
     }
   }, [updateStatus]);
@@ -340,12 +404,13 @@ export function InterviewView({
           onClick={handleEnableAudio}
         />
         
-        {/* Audio Enable Prompt */}
-        {!audioEnabled && conversationStarted && (
+        {/* Audio Enable Prompt - Always show until explicitly enabled */}
+        {!audioEnabled && (
           <div className="audio-prompt">
             <button className="btn-enable-audio" onClick={handleEnableAudio}>
-              🔊 Click to Enable Audio
+              🔊 Click to Enable Avatar Audio
             </button>
+            <p className="audio-hint">Browser requires interaction to play sound</p>
           </div>
         )}
         

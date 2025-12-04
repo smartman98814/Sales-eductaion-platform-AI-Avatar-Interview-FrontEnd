@@ -95,34 +95,47 @@
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 30;
+  text-align: center;
 }
 
 .btn-enable-audio {
-  padding: 16px 32px;
+  padding: 20px 40px;
   background: rgba(102, 126, 234, 0.95);
   backdrop-filter: blur(10px);
   color: white;
-  border: 2px solid white;
-  border-radius: 12px;
-  font-size: 1.1rem;
-  font-weight: 600;
+  border: 3px solid white;
+  border-radius: 16px;
+  font-size: 1.2rem;
+  font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   transition: all 0.2s ease;
   animation: audioPromptPulse 2s ease-in-out infinite;
+  display: block;
+  margin-bottom: 12px;
 }
 
 .btn-enable-audio:hover {
-  transform: scale(1.05);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  transform: scale(1.08);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.audio-hint {
+  color: white;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  margin: 0;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 @keyframes audioPromptPulse {
   0%, 100% {
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 0 0 rgba(102, 126, 234, 0.7);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 0 rgba(102, 126, 234, 0.8);
   }
   50% {
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 0 15px rgba(102, 126, 234, 0);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 20px rgba(102, 126, 234, 0);
   }
 }
 
