@@ -21,6 +21,7 @@ export function InterviewView({
   const [currentResponse, setCurrentResponse] = useState('');
   const [threadId, setThreadId] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [audioEnabled, setAudioEnabled] = useState(false);
 
   // Webcam for interviewer
   const {
@@ -85,6 +86,11 @@ export function InterviewView({
     if (peerConnection && avatarVideoRef.current) {
       console.log('Setting up peer connection with avatar video');
       
+      // Ensure video element is ready for audio playback
+      const videoElement = avatarVideoRef.current;
+      videoElement.muted = false;
+      videoElement.volume = 1.0;
+      
       // Check if tracks already exist (they might be added before this effect runs)
       const checkExistingTracks = () => {
         const receivers = peerConnection.getReceivers();
@@ -94,8 +100,10 @@ export function InterviewView({
           if (receiver.track && receiver.track.kind === 'video') {
             console.log('Found existing video track');
             const stream = new MediaStream([receiver.track]);
-            avatarVideoRef.current.srcObject = stream;
+            videoElement.srcObject = stream;
             updateStatus('Avatar video stream connected ✓');
+            // Try to play with audio
+            videoElement.play().catch(err => console.log('Play error:', err));
             return true;
           }
         }
@@ -108,15 +116,25 @@ export function InterviewView({
       // Set up event handler for future tracks
       peerConnection.ontrack = (event) => {
         console.log('ontrack event fired', event);
+        console.log('Track kind:', event.track?.kind);
+        
         if (event.streams && event.streams[0]) {
           console.log('Setting video stream from ontrack');
-          avatarVideoRef.current.srcObject = event.streams[0];
+          videoElement.srcObject = event.streams[0];
           updateStatus('Avatar video stream connected ✓');
+          // Ensure audio is enabled
+          videoElement.muted = false;
+          videoElement.volume = 1.0;
+          videoElement.play().catch(err => console.log('Play error:', err));
         } else if (event.track) {
           console.log('Setting video track directly');
           const stream = new MediaStream([event.track]);
-          avatarVideoRef.current.srcObject = stream;
+          videoElement.srcObject = stream;
           updateStatus('Avatar video stream connected ✓');
+          // Ensure audio is enabled
+          videoElement.muted = false;
+          videoElement.volume = 1.0;
+          videoElement.play().catch(err => console.log('Play error:', err));
         }
       };
 
@@ -129,7 +147,7 @@ export function InterviewView({
         if (state === 'connected') {
           updateStatus('WebRTC connection established ✓');
           // Double-check for tracks when connected
-          if (!avatarVideoRef.current.srcObject) {
+          if (!videoElement.srcObject) {
             console.log('No video yet, checking for tracks...');
             checkExistingTracks();
           }
@@ -151,12 +169,33 @@ export function InterviewView({
   }, [peerConnection, updateStatus]);
 
   /**
+   * Enable audio playback
+   */
+  const handleEnableAudio = useCallback(async () => {
+    if (avatarVideoRef.current) {
+      try {
+        avatarVideoRef.current.muted = false;
+        avatarVideoRef.current.volume = 1.0;
+        await avatarVideoRef.current.play();
+        setAudioEnabled(true);
+        updateStatus('Audio enabled ✓');
+      } catch (error) {
+        console.error('Error enabling audio:', error);
+        updateStatus('Click the video to enable audio');
+      }
+    }
+  }, [updateStatus]);
+
+  /**
    * Start the conversation
    */
   const handleStartConversation = async () => {
     try {
       setConversationStarted(true);
       updateStatus('Starting conversation...');
+      
+      // Enable audio first
+      await handleEnableAudio();
       
       // Send initial greeting through avatar
       const greeting = `Hello! I'm ${avatar.name}. ${avatar.description}`;
@@ -298,7 +337,18 @@ export function InterviewView({
           autoPlay
           playsInline
           className="avatar-video"
+          onClick={handleEnableAudio}
         />
+        
+        {/* Audio Enable Prompt */}
+        {!audioEnabled && conversationStarted && (
+          <div className="audio-prompt">
+            <button className="btn-enable-audio" onClick={handleEnableAudio}>
+              🔊 Click to Enable Audio
+            </button>
+          </div>
+        )}
+        
         <div className="avatar-info">
           <div 
             className="avatar-badge"
