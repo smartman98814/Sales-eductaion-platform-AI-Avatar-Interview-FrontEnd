@@ -16,7 +16,7 @@ export class OpenAIService {
    * @returns {Promise<string>} The AI-generated text response
    */
   async complete(prompt) {
-    const response = await fetchWithRetry(`https://sales-education-platform-with-ai-avatar.onrender.com/api/openai/complete`, {
+    const response = await fetchWithRetry(`${this.baseUrl}/api/openai/complete`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -24,16 +24,8 @@ export class OpenAIService {
       body: JSON.stringify({ prompt }),
     }, 3, 60000);
     
-    if (!response.ok) {
-      let errorMessage = 'Server error';
-      try {
-        const errorData = await response.json();
-        errorMessage = errorData.detail || errorData.message || errorMessage;
-      } catch (e) {
-        // If response is not JSON, use status text
-        errorMessage = response.statusText || errorMessage;
-      }
-      throw new Error(errorMessage);
+    if (response.status === 500) {
+      throw new Error('Server error');
     }
     
     const data = await response.json();

@@ -67,13 +67,20 @@ function App() {
       updateStatus('Now. You can click the start button to start the stream');
     } catch (error) {
       const errorMessage = error.message || 'Unknown error';
+      const errorLower = errorMessage.toLowerCase();
       updateStatus(`Error: ${errorMessage}`);
       
-      if (errorMessage.toLowerCase().includes('concurrent') || errorMessage.toLowerCase().includes('limit')) {
+      if (errorLower.includes('quota') || errorLower === 'quota not enough') {
+        updateStatus('⚠️ Your HeyGen account has run out of credits/quota.');
+        updateStatus('To fix this:');
+        updateStatus('1. Check your HeyGen account balance at: https://app.heygen.com/settings/billing');
+        updateStatus('2. Purchase credits or upgrade your plan if needed');
+        updateStatus('3. Free trial credits may have expired - consider upgrading to a paid plan');
+      } else if (errorLower.includes('concurrent') || (errorLower.includes('limit') && !errorLower.includes('quota'))) {
         updateStatus('Tip: Click "Manage Sessions" button to view and close existing sessions.');
-      } else if (errorMessage.toLowerCase().includes('avatar not found') || 
-                 errorMessage.toLowerCase().includes('not an interactive avatar') ||
-                 errorMessage.toLowerCase().includes('not a streaming avatar')) {
+      } else if (errorLower.includes('avatar not found') || 
+                 errorLower.includes('not an interactive avatar') ||
+                 errorLower.includes('not a streaming avatar')) {
         updateStatus('Tip: Only Streaming Avatars (Interactive Avatars) can be used for streaming.');
         updateStatus('Get valid avatar IDs from: https://app.heygen.com/streaming-avatar');
       }
@@ -284,10 +291,6 @@ function App() {
     }
   }, [updateStatus]);
 
-  const handleVoiceChange = useCallback(() => {
-    // Placeholder for future voice change logic
-  }, []);
-
   return (
     <div className="main">
       <div className="actionRowsWrap">
@@ -302,7 +305,6 @@ function App() {
           onChange={setVoiceId}
           onManualChange={setVoiceIdManual}
           manualValue={voiceIdManual}
-          onVoiceChange={handleVoiceChange}
         />
         <Controls
           onCreateSession={handleCreateSession}
