@@ -284,25 +284,57 @@ export function InterviewView({
   const handleSendMessage = useCallback(async (message) => {
     if (!message.trim() || isProcessing) return;
 
+    // Create timeout for backend response
+    const timeoutMs = 30000; // 30 second timeout
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error('Backend response timeout - no response received in 30 seconds'));
+      }, timeoutMs);
+    });
+
     try {
       updateStatus(`You: ${message}`);
       setIsProcessing(true);
       setCurrentResponse('');
 
-      // Get AI response from backend agent
-      const stream = await agentService.chatWithAgentStream(
+      // Get AI response from backend agent with timeout
+      const streamPromise = agentService.chatWithAgentStream(
         avatar.id,
         message,
         threadId
       );
 
+      const stream = await Promise.race([streamPromise, timeoutPromise]);
+      clearTimeout(timeoutId);
+
       const reader = stream.getReader();
       const decoder = new TextDecoder();
       let fullResponse = '';
       let isReading = true;
+      let lastChunkTime = Date.now();
+
+      // Create read timeout
+      const checkTimeout = setInterval(() => {
+        if (Date.now() - lastChunkTime > 15000) {
+          // No data for 15 seconds
+          updateStatus('⚠️ Stream timeout - no data received');
+          isReading = false;
+          clearInterval(checkTimeout);
+        }
+      }, 1000);
 
       while (isReading) {
-        const { done, value } = await reader.read();
+        const readPromise = reader.read();
+        const { done, value } = await Promise.race([
+          readPromise,
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Read timeout')), 15000)
+          )
+        ]);
+
+        lastChunkTime = Date.now();
+
         if (done) {
           isReading = false;
           break;
@@ -320,6 +352,7 @@ export function InterviewView({
               if (data.t === 's') {
                 // Start - receive thread ID
                 setThreadId(data.tid);
+                updateStatus('✓ Connected to backend agent');
               } else if (data.t === 'c') {
                 // Chunk - accumulate response
                 fullResponse += data.d;
@@ -327,29 +360,39 @@ export function InterviewView({
               } else if (data.t === 'd') {
                 // Done
                 isReading = false;
+                updateStatus('✓ AI response complete');
                 break;
               } else if (data.t === 'e') {
                 // Error
                 throw new Error(data.e);
               }
             } catch (e) {
-              console.error('Error parsing SSE data:', e);
+              console.error('Error parsing SSE data:', e, 'Line:', line);
             }
           }
         }
       }
 
+      clearInterval(checkTimeout);
+
       // Send the full AI response to HeyGen avatar to speak
-      if (fullResponse) {
+      if (fullResponse && fullResponse.trim()) {
         updateStatus(`${avatar.name}: ${fullResponse}`);
         await sendTask(fullResponse);
+        updateStatus('✓ Avatar speaking response');
+      } else {
+        updateStatus('⚠️ No response received from AI');
       }
 
       setCurrentResponse('');
       setIsProcessing(false);
     } catch (error) {
-      updateStatus(`Error: ${error.message}`);
+      clearTimeout(timeoutId);
+      console.error('Error in handleSendMessage:', error);
+      updateStatus(`❌ Error: ${error.message}`);
+      updateStatus('Tip: Check backend terminal for errors');
       setIsProcessing(false);
+      setCurrentResponse('');
     }
   }, [avatar.id, avatar.name, threadId, sendTask, updateStatus, isProcessing]);
 
@@ -460,6 +503,10 @@ export function InterviewView({
               transcript={interimTranscript}
               isProcessing={isProcessing}
             />
+            <TextInput
+              onSend={handleSendMessage}
+              disabled={isProcessing}
+            />
             <button 
               className="btn-close"
               onClick={handleExit}
@@ -511,10 +558,55 @@ function VoiceIndicator({ isActive, transcript, isProcessing }) {
           ) : isActive ? (
             <span className="status-listening">Listening... Speak now</span>
           ) : (
-            <span className="status-idle">Ready for your voice</span>
+            <span className="status-idle">Voice active</span>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Text Input Component
+ * Allows typing messages in addition to voice input
+ */
+function TextInput({ onSend, disabled }) {
+  const [message, setMessage] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (message.trim() && !disabled) {
+      console.log('Sending typed message:', message);
+      onSend(message);
+      setMessage('');
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      handleSubmit(e);
+    }
+  };
+
+  return (
+    <form className="text-input-form" onSubmit={handleSubmit}>
+      <input
+        type="text"
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        onKeyPress={handleKeyPress}
+        placeholder="Or type your message here..."
+        className="text-input"
+        disabled={disabled}
+        autoComplete="off"
+      />
+      <button 
+        type="submit" 
+        className="btn-send"
+        disabled={disabled || !message.trim()}
+      >
+        Send
+      </button>
+    </form>
   );
 }

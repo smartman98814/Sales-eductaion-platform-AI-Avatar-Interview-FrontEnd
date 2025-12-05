@@ -2,17 +2,20 @@
  * Main Application Component
  * AI Avatar Interview Application - Zoom-like interview environment
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { AvatarGrid } from './components/AvatarGrid';
 import { InterviewView } from './components/InterviewView';
 import { LoadingScreen } from './components/LoadingScreen';
+import { BackendStatus } from './components/BackendStatus';
 import { useStreamingSession } from './hooks/useStreamingSession';
+import { heygenService } from './services/HeyGenService';
 import './index.css';
 
 function App() {
   const [selectedAvatar, setSelectedAvatar] = useState(null);
   const [view, setView] = useState('grid'); // 'grid', 'loading', or 'interview'
   const [loadingStatus, setLoadingStatus] = useState('Initializing...');
+  const [backendReady, setBackendReady] = useState(false);
 
   // HeyGen streaming session hook
   const {
@@ -26,9 +29,42 @@ function App() {
   } = useStreamingSession();
 
   /**
+   * Handle backend status change
+   */
+  const handleBackendStatusChange = useCallback((statusInfo) => {
+    setBackendReady(statusInfo.connected && statusInfo.agentsReady);
+  }, []);
+
+  /**
+   * Cleanup HeyGen session when browser closes/refreshes
+   */
+  useEffect(() => {
+    const handleBeforeUnload = (event) => {
+      // If there's an active session, close it
+      if (sessionInfo && sessionInfo.session_id) {
+        console.log('Browser closing - cleaning up HeyGen session');
+        heygenService.stopSessionSync(sessionInfo.session_id);
+      }
+    };
+
+    // Add event listener for browser close/refresh
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    // Cleanup listener on component unmount
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [sessionInfo]);
+
+  /**
    * Handle avatar selection - Start HeyGen session immediately
    */
   const handleAvatarSelect = useCallback(async (avatar) => {
+    if (!backendReady) {
+      alert('Backend is not ready. Please wait for backend initialization to complete.');
+      return;
+    }
+
     setSelectedAvatar(avatar);
     setView('loading');
     setLoadingStatus('Creating HeyGen session...');
@@ -67,7 +103,7 @@ function App() {
       setView('grid');
       setSelectedAvatar(null);
     }
-  }, [createNewSession, startSession]);
+  }, [createNewSession, startSession, backendReady]);
 
   /**
    * Handle exiting the interview
@@ -101,8 +137,14 @@ function App() {
 
   return (
     <div className="app">
+      {/* Backend Status Check */}
+      <BackendStatus onStatusChange={handleBackendStatusChange} />
+
       {view === 'grid' && (
-        <AvatarGrid onAvatarSelect={handleAvatarSelect} />
+        <AvatarGrid 
+          onAvatarSelect={handleAvatarSelect}
+          backendReady={backendReady}
+        />
       )}
       
       {view === 'loading' && selectedAvatar && (

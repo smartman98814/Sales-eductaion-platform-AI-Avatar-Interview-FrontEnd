@@ -352,6 +352,8 @@
   display: flex;
   align-items: center;
   gap: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 /* Voice Indicator */
@@ -434,6 +436,36 @@
   to {
     opacity: 1;
   }
+}
+
+/* Text Input */
+.text-input-form {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.text-input {
+  width: 400px;
+  padding: 14px 20px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 8px;
+  font-size: 1rem;
+  outline: none;
+  transition: all 0.2s ease;
+  background: rgba(255, 255, 255, 0.95);
+  color: #2d3748;
+}
+
+.text-input:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+.text-input:disabled {
+  background: rgba(255, 255, 255, 0.5);
+  color: #a0aec0;
+  cursor: not-allowed;
 }
 
 /* Status Log */
@@ -545,6 +577,19 @@
 
   .conversation-controls {
     flex-direction: column;
+    width: 100%;
+  }
+
+  .voice-indicator {
+    width: 100%;
+  }
+
+  .text-input-form {
+    width: 100%;
+  }
+
+  .text-input {
+    width: 100%;
   }
 
   .conversation-controls {

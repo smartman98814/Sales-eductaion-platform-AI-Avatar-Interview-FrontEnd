@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { AVATARS } from '../data/avatarData';
 import '../styles/avatarGrid.css';
 
-export function AvatarGrid({ onAvatarSelect }) {
+export function AvatarGrid({ onAvatarSelect, backendReady }) {
   const [hoveredAvatar, setHoveredAvatar] = useState(null);
   const [modalPosition, setModalPosition] = useState({ x: 0, y: 0, showBelow: false });
 
@@ -36,6 +36,13 @@ export function AvatarGrid({ onAvatarSelect }) {
     <div className="avatar-grid-container">
       <h1 className="grid-title">Select Your Interview Customer</h1>
       <p className="grid-subtitle">Choose one of 10 AI customer personas to practice your sales pitch</p>
+      
+      {!backendReady && (
+        <div className="backend-notice">
+          <div className="notice-icon">⏳</div>
+          <p>Initializing backend AI agents... Please wait</p>
+        </div>
+      )}
       
       <div className="avatar-grid">
         {AVATARS.map((avatar) => (

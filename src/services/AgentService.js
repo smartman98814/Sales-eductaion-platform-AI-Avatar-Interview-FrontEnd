@@ -10,6 +10,28 @@ export class AgentService {
   }
 
   /**
+   * Check backend health
+   * @returns {Promise<Object>} Health status
+   */
+  async checkHealth() {
+    try {
+      const response = await fetch(`${this.baseUrl}/health`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`Backend health check failed: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error checking backend health:', error);
+      throw new Error(`Cannot connect to backend at ${this.baseUrl}`);
+    }
+  }
+
+  /**
    * Get all available agents
    * @returns {Promise<Array>} List of agents
    */
@@ -17,7 +39,10 @@ export class AgentService {
     try {
       const response = await fetch(`${this.baseUrl}/api/agents`);
       if (!response.ok) {
-        throw new Error('Failed to fetch agents');
+        if (response.status === 404) {
+          throw new Error('Backend agents endpoint not found');
+        }
+        throw new Error(`Failed to fetch agents: ${response.status}`);
       }
       return await response.json();
     } catch (error) {
@@ -34,9 +59,14 @@ export class AgentService {
     try {
       const response = await fetch(`${this.baseUrl}/api/agents/initialize`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
       if (!response.ok) {
-        throw new Error('Failed to initialize agents');
+        const errorData = await response.json().catch(() => ({}));
+        const errorMsg = errorData.detail || errorData.message || `HTTP ${response.status}`;
+        throw new Error(`Failed to initialize agents: ${errorMsg}`);
       }
       return await response.json();
     } catch (error) {
@@ -70,7 +100,14 @@ export class AgentService {
       );
 
       if (!response.ok) {
-        throw new Error('Failed to chat with agent');
+        let errorMsg = `HTTP ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.detail || errorData.message || errorMsg;
+        } catch (e) {
+          // Response not JSON
+        }
+        throw new Error(`Failed to chat with agent: ${errorMsg}`);
       }
 
       return response.body;

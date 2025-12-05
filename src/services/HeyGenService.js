@@ -203,6 +203,50 @@ export class HeyGenService {
   }
 
   /**
+   * Stop session synchronously (for cleanup during page unload)
+   * Uses sendBeacon for reliability when browser is closing
+   * @param {string} sessionId - Session ID to stop
+   */
+  stopSessionSync(sessionId) {
+    if (!sessionId) return;
+    
+    try {
+      const url = `${this.serverUrl}/v1/streaming.stop`;
+      const payload = JSON.stringify({ 
+        session_id: sessionId 
+      });
+      
+      console.log('Stopping HeyGen session on page unload:', sessionId);
+      
+      // Method 1: sendBeacon (most reliable for page unload)
+      // Note: sendBeacon has limitations with custom headers
+      const blob = new Blob([payload], { type: 'application/json' });
+      const beaconUrl = `${url}?x-api-key=${encodeURIComponent(this.apiKey)}`;
+      const sent = navigator.sendBeacon(beaconUrl, blob);
+      
+      if (sent) {
+        console.log('Session cleanup beacon sent');
+      } else {
+        // Method 2: Fallback with keepalive fetch
+        console.log('Beacon failed, using keepalive fetch');
+        fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Api-Key': this.apiKey,
+          },
+          body: payload,
+          keepalive: true, // Request continues even if page closes
+        }).catch(err => {
+          console.error('Keepalive fetch error:', err);
+        });
+      }
+    } catch (error) {
+      console.error('Error in stopSessionSync:', error);
+    }
+  }
+
+  /**
    * List all active sessions
    * @returns {Promise<Array>} Array of active sessions
    */

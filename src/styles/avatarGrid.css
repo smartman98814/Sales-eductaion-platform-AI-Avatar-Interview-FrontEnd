@@ -22,8 +22,41 @@
 .grid-subtitle {
   font-size: 1.1rem;
   color: rgba(255, 255, 255, 0.9);
-  margin-bottom: 40px;
+  margin-bottom: 20px;
   text-align: center;
+}
+
+/* Backend Notice */
+.backend-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  padding: 12px 24px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.notice-icon {
+  font-size: 1.5rem;
+  animation: rotate 2s linear infinite;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.backend-notice p {
+  margin: 0;
+  color: white;
+  font-weight: 500;
 }
 
 .avatar-grid {
