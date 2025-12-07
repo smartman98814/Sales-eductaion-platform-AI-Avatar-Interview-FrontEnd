@@ -194,28 +194,34 @@
   color: rgba(255, 255, 255, 0.8);
 }
 
-/* Current Response Overlay */
+/* Current Response Overlay - Left Side */
 .response-overlay {
   position: absolute;
-  top: 20px;
   left: 20px;
-  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 350px;
+  max-width: calc(50vw - 40px);
+  max-height: 70vh;
   background: rgba(102, 126, 234, 0.95);
   backdrop-filter: blur(10px);
-  padding: 16px 20px;
+  padding: 20px;
   border-radius: 12px;
   z-index: 20;
-  animation: slideDown 0.3s ease;
+  animation: slideInLeft 0.3s ease;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
-@keyframes slideDown {
+@keyframes slideInLeft {
   from {
     opacity: 0;
-    transform: translateY(-20px);
+    transform: translate(-20px, -50%);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate(0, -50%);
   }
 }
 
@@ -224,6 +230,8 @@
   font-size: 1rem;
   line-height: 1.6;
   margin: 0;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 /* Control Panel - Bottom */
@@ -929,6 +937,23 @@
     right: 12px;
     padding: 8px 12px;
     font-size: 0.85rem;
+  }
+
+  .response-overlay {
+    width: calc(100vw - 24px);
+    max-width: none;
+    left: 12px;
+    top: auto;
+    bottom: 200px;
+    transform: none;
+    max-height: 200px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .response-overlay {
+    width: 300px;
+    max-width: calc(40vw - 20px);
   }
 }
 
