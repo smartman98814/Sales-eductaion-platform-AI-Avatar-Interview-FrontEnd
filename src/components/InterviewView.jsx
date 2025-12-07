@@ -22,6 +22,8 @@ export function InterviewView({
   const [threadId, setThreadId] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(false);
+  const [showVoiceTest, setShowVoiceTest] = useState(false);
+  const [voiceTestHistory, setVoiceTestHistory] = useState([]);
 
   // Webcam for interviewer
   const {
@@ -31,17 +33,41 @@ export function InterviewView({
     stopWebcam,
   } = useWebcam();
 
+  // Track final transcript separately for test panel (since hook clears it quickly)
+  const [testFinalTranscript, setTestFinalTranscript] = useState('');
+
   // Speech recognition for voice input
   const {
     isListening: isVoiceActive,
+    transcript: finalTranscript,
     interimTranscript,
+    error: voiceError,
     isSupported: voiceSupported,
     startListening: startVoice,
     stopListening: stopVoice,
   } = useSpeechRecognition({
     onTranscriptComplete: (text) => {
-      // Auto-send when speech is complete
-      if (text.trim() && conversationStarted && !isProcessing) {
+      console.log('Voice test panel - transcript complete:', text);
+      
+      // Store final transcript for test panel
+      if (showVoiceTest && text.trim()) {
+        setTestFinalTranscript(text);
+        // Keep it for 5 seconds so user can see it
+        setTimeout(() => {
+          setTestFinalTranscript('');
+        }, 5000);
+      }
+      
+      // Add to test history if in test mode
+      if (showVoiceTest) {
+        setVoiceTestHistory(prev => [...prev, {
+          text,
+          timestamp: new Date().toLocaleTimeString()
+        }]);
+      }
+      
+      // Auto-send when speech is complete (only if not in test mode)
+      if (text.trim() && conversationStarted && !isProcessing && !showVoiceTest) {
         handleSendMessage(text);
       }
     },
@@ -251,6 +277,52 @@ export function InterviewView({
   }, [updateStatus]);
 
   /**
+   * Request microphone permission
+   */
+  const requestMicrophonePermission = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Stop the stream immediately - we just needed permission
+      stream.getTracks().forEach(track => track.stop());
+      return true;
+    } catch (error) {
+      console.error('Microphone permission denied:', error);
+      updateStatus('Microphone permission denied. Please allow microphone access in browser settings.');
+      return false;
+    }
+  }, [updateStatus]);
+
+  /**
+   * Toggle voice input on/off
+   */
+  const handleToggleVoice = useCallback(async () => {
+    if (isVoiceActive) {
+      stopVoice();
+      updateStatus('Voice input stopped');
+    } else {
+      if (voiceSupported) {
+        try {
+          // Request microphone permission first
+          updateStatus('Requesting microphone permission...');
+          const hasPermission = await requestMicrophonePermission();
+          
+          if (hasPermission) {
+            startVoice();
+            updateStatus('Voice input activated - speak naturally!');
+          } else {
+            updateStatus('Microphone access required for voice input');
+          }
+        } catch (error) {
+          updateStatus(`Voice input error: ${error.message || 'Failed to start'}`);
+          console.error('Failed to start voice input:', error);
+        }
+      } else {
+        updateStatus('Voice input not supported in this browser. Please use Chrome, Edge, or Safari.');
+      }
+    }
+  }, [isVoiceActive, voiceSupported, startVoice, stopVoice, updateStatus, requestMicrophonePermission]);
+
+  /**
    * Start the conversation
    */
   const handleStartConversation = async () => {
@@ -266,10 +338,23 @@ export function InterviewView({
       await sendTask(greeting);
       updateStatus('Conversation started!');
       
-      // Start voice recognition
+      // Start voice recognition (with error handling)
       if (voiceSupported) {
-        updateStatus('Voice input activated - speak naturally!');
-        startVoice();
+        try {
+          updateStatus('Requesting microphone permission...');
+          const hasPermission = await requestMicrophonePermission();
+          
+          if (hasPermission) {
+            updateStatus('Activating voice input...');
+            startVoice();
+            updateStatus('Voice input activated - speak naturally!');
+          } else {
+            updateStatus('Microphone access required. Click the mic button to enable voice input.');
+          }
+        } catch (error) {
+          updateStatus(`Voice input error: ${error.message || 'Failed to start'}. You can still type messages.`);
+          console.error('Voice input startup error:', error);
+        }
       } else {
         updateStatus('Voice input not supported - please type your messages');
       }
@@ -502,6 +587,8 @@ export function InterviewView({
               isActive={isVoiceActive}
               transcript={interimTranscript}
               isProcessing={isProcessing}
+              onToggle={handleToggleVoice}
+              voiceSupported={voiceSupported}
             />
             <TextInput
               onSend={handleSendMessage}
@@ -517,6 +604,29 @@ export function InterviewView({
         )}
       </div>
 
+      {/* Voice Test Panel - Toggleable */}
+      {showVoiceTest && (
+        <VoiceTestPanel
+          isActive={isVoiceActive}
+          interimTranscript={interimTranscript}
+          finalTranscript={testFinalTranscript || finalTranscript}
+          error={voiceError}
+          history={voiceTestHistory}
+          voiceSupported={voiceSupported}
+          onStart={startVoice}
+          onStop={stopVoice}
+          onClose={() => {
+            setShowVoiceTest(false);
+            setTestFinalTranscript('');
+            setVoiceTestHistory([]);
+          }}
+          onClearHistory={() => {
+            setVoiceTestHistory([]);
+            setTestFinalTranscript('');
+          }}
+        />
+      )}
+
       {/* Status Log - Collapsible */}
       <div className="status-log">
         <details>
@@ -530,6 +640,15 @@ export function InterviewView({
           </div>
         </details>
       </div>
+
+      {/* Voice Test Toggle Button */}
+      <button
+        className="btn-voice-test"
+        onClick={() => setShowVoiceTest(!showVoiceTest)}
+        title="Toggle voice input test panel"
+      >
+        {showVoiceTest ? '✕ Hide Voice Test' : '🎤 Test Voice Input'}
+      </button>
     </div>
   );
 }
@@ -538,29 +657,183 @@ export function InterviewView({
  * Voice Indicator Component
  * Shows voice recognition status and interim transcript
  */
-function VoiceIndicator({ isActive, transcript, isProcessing }) {
+function VoiceIndicator({ isActive, transcript, isProcessing, onToggle, voiceSupported }) {
   return (
     <div className="voice-indicator">
       <div className="voice-status">
-        <div className={`mic-icon ${isActive ? 'mic-active' : ''} ${isProcessing ? 'mic-disabled' : ''}`}>
+        <button
+          className={`mic-button ${isActive ? 'mic-active' : ''} ${isProcessing ? 'mic-disabled' : ''}`}
+          onClick={onToggle}
+          disabled={isProcessing || !voiceSupported}
+          title={isActive ? 'Click to stop voice input' : 'Click to start voice input'}
+          type="button"
+        >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
             <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
             <line x1="12" y1="19" x2="12" y2="23" />
             <line x1="8" y1="23" x2="16" y2="23" />
           </svg>
-        </div>
+        </button>
         <div className="voice-text">
           {isProcessing ? (
             <span className="status-processing">Processing AI response...</span>
           ) : isActive && transcript ? (
             <span className="status-listening">{transcript}</span>
           ) : isActive ? (
-            <span className="status-listening">Listening... Speak now</span>
+            <span className="status-listening">🎤 Listening... Speak now</span>
+          ) : voiceSupported ? (
+            <span className="status-idle">Click mic to start voice</span>
           ) : (
-            <span className="status-idle">Voice active</span>
+            <span className="status-idle">Voice not supported</span>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Voice Test Panel Component
+ * Shows real-time voice recognition feedback for testing
+ */
+function VoiceTestPanel({ 
+  isActive, 
+  interimTranscript, 
+  finalTranscript, 
+  error, 
+  history, 
+  voiceSupported,
+  onStart,
+  onStop,
+  onClose, 
+  onClearHistory 
+}) {
+  const handleToggle = () => {
+    console.log('Voice test panel - toggle clicked, current state:', isActive);
+    if (isActive) {
+      console.log('Stopping voice recognition...');
+      onStop();
+    } else {
+      console.log('Starting voice recognition...');
+      onStart();
+    }
+  };
+
+  return (
+    <div className="voice-test-panel">
+      <div className="voice-test-header">
+        <h3>🎤 Voice Input Test</h3>
+        <div className="voice-test-actions">
+          <button className="btn-clear-history" onClick={onClearHistory}>
+            Clear History
+          </button>
+          <button className="btn-close-panel" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <div className="voice-test-status">
+        <div className={`status-indicator ${isActive ? 'status-active' : 'status-inactive'}`}>
+          <div className="status-dot"></div>
+          <span>{isActive ? '🎤 Listening...' : '⏸️ Not Listening'}</span>
+        </div>
+        {error && (
+          <div className="voice-test-error">
+            ⚠️ Error: {error}
+            <br />
+            <small>Check browser console for more details</small>
+          </div>
+        )}
+        {!voiceSupported && (
+          <div className="voice-test-error">
+            ⚠️ Voice recognition not supported in this browser. Please use Chrome, Edge, or Safari.
+          </div>
+        )}
+        {voiceSupported && !isActive && !error && (
+          <div className="voice-test-hint">
+            💡 Click &quot;Start Listening&quot; button below to begin
+          </div>
+        )}
+      </div>
+
+      {/* Voice Control Button */}
+      <div className="voice-test-controls">
+        <button
+          className={`btn-voice-toggle ${isActive ? 'btn-voice-active' : ''}`}
+          onClick={handleToggle}
+          disabled={!voiceSupported}
+        >
+          {isActive ? (
+            <>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" rx="2"/>
+              </svg>
+              Stop Listening
+            </>
+          ) : (
+            <>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
+              Start Listening
+            </>
+          )}
+        </button>
+      </div>
+
+      <div className="voice-test-display">
+        <div className="voice-test-current">
+          <label>Current Transcript (Real-time):</label>
+          <div className="transcript-box transcript-interim">
+            {interimTranscript ? (
+              <span>{interimTranscript}</span>
+            ) : isActive ? (
+              <span className="placeholder">Listening... speak now</span>
+            ) : (
+              <span className="placeholder">Click &quot;Start Listening&quot; and speak to see transcript...</span>
+            )}
+          </div>
+        </div>
+
+        {finalTranscript && (
+          <div className="voice-test-final">
+            <label>Final Transcript (Last recognized):</label>
+            <div className="transcript-box transcript-final">
+              {finalTranscript}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {history.length > 0 && (
+        <div className="voice-test-history">
+          <label>Recognition History ({history.length}):</label>
+          <div className="history-list">
+            {history.slice().reverse().map((item, idx) => (
+              <div key={idx} className="history-item">
+                <span className="history-time">{item.timestamp}</span>
+                <span className="history-text">{item.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="voice-test-info">
+        <p><strong>How to test:</strong></p>
+        <ol>
+          <li>Click the microphone button below to start listening</li>
+          <li>Speak clearly into your microphone</li>
+          <li>Watch the &quot;Current Transcript&quot; update in real-time as you speak</li>
+          <li>When you pause, the final transcript will appear</li>
+          <li>All recognized text will be saved to history</li>
+        </ol>
+        <p className="note">Note: In test mode, recognized text will NOT be sent to the AI. Close this panel to resume normal operation.</p>
       </div>
     </div>
   );

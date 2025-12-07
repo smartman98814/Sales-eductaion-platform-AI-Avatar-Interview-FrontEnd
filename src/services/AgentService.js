@@ -3,10 +3,22 @@
  * Handles communication with the backend agents API
  */
 import { config } from '../config';
+import { authService } from './AuthService';
 
 export class AgentService {
   constructor() {
     this.baseUrl = config.backend.baseUrl;
+  }
+
+  /**
+   * Get headers with authentication
+   * @returns {Object} Headers object with auth token if available
+   */
+  getHeaders() {
+    return {
+      'Content-Type': 'application/json',
+      ...authService.getAuthHeader(),
+    };
   }
 
   /**
@@ -17,9 +29,7 @@ export class AgentService {
     try {
       const response = await fetch(`${this.baseUrl}/health`, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getHeaders(),
       });
       if (!response.ok) {
         throw new Error(`Backend health check failed: ${response.status}`);
@@ -37,7 +47,9 @@ export class AgentService {
    */
   async getAllAgents() {
     try {
-      const response = await fetch(`${this.baseUrl}/api/agents`);
+      const response = await fetch(`${this.baseUrl}/api/agents`, {
+        headers: this.getHeaders(),
+      });
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error('Backend agents endpoint not found');
@@ -59,9 +71,7 @@ export class AgentService {
     try {
       const response = await fetch(`${this.baseUrl}/api/agents/initialize`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getHeaders(),
       });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -88,9 +98,7 @@ export class AgentService {
         `${this.baseUrl}/api/agents/${agentId}/chat/stream`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: this.getHeaders(),
           body: JSON.stringify({
             message,
             thread_id: threadId,

@@ -6,14 +6,10 @@ import { useState, useEffect } from 'react';
 import { agentService } from '../services/AgentService';
 import '../styles/backendStatus.css';
 
-export function BackendStatus({ onStatusChange }) {
-  const [status, setStatus] = useState('checking'); // 'checking', 'connected', 'error', 'initializing'
+export function BackendStatus({ onStatusChange, isAuthenticated }) {
+  const [status, setStatus] = useState('idle'); // 'idle', 'checking', 'connected', 'error', 'initializing'
   const [agentsReady, setAgentsReady] = useState(false);
   const [error, setError] = useState(null);
-
-  useEffect(() => {
-    checkBackendStatus();
-  }, []);
 
   const checkBackendStatus = async () => {
     try {
@@ -55,6 +51,25 @@ export function BackendStatus({ onStatusChange }) {
       setStatus('error');
     }
   };
+
+  useEffect(() => {
+    // Only check backend status when user is authenticated
+    if (isAuthenticated) {
+      checkBackendStatus();
+    } else {
+      // Reset status when not authenticated
+      setStatus('idle');
+      setAgentsReady(false);
+      setError(null);
+      onStatusChange?.({ connected: false, agentsReady: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
+
+  // Don't show anything if not authenticated
+  if (!isAuthenticated) {
+    return null;
+  }
 
   if (status === 'connected' && agentsReady) {
     return null; // Hide when everything is working

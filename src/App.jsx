@@ -3,17 +3,24 @@
  * AI Avatar Interview Application - Zoom-like interview environment
  */
 import { useState, useCallback, useEffect } from 'react';
-import { AvatarGrid } from './components/AvatarGrid';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Navbar } from './components/Navbar';
+import { LandingPage } from './components/LandingPage';
+import { Login } from './components/Login';
+import { Signup } from './components/Signup';
+import { Dashboard } from './components/Dashboard';
 import { InterviewView } from './components/InterviewView';
 import { LoadingScreen } from './components/LoadingScreen';
 import { BackendStatus } from './components/BackendStatus';
 import { useStreamingSession } from './hooks/useStreamingSession';
 import { heygenService } from './services/HeyGenService';
+import { authService } from './services/AuthService';
 import './index.css';
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState(null);
-  const [view, setView] = useState('grid'); // 'grid', 'loading', or 'interview'
+  const [view, setView] = useState('dashboard'); // 'dashboard', 'loading', or 'interview'
   const [loadingStatus, setLoadingStatus] = useState('Initializing...');
   const [backendReady, setBackendReady] = useState(false);
 
@@ -29,6 +36,43 @@ function App() {
   } = useStreamingSession();
 
   /**
+   * Check authentication on mount
+   */
+  useEffect(() => {
+    const checkAuth = async () => {
+      if (authService.isAuthenticated()) {
+        const isValid = await authService.verifyToken();
+        if (isValid) {
+          setIsAuthenticated(true);
+        }
+      }
+    };
+    checkAuth();
+  }, []);
+
+  const navigate = useNavigate();
+
+  /**
+   * Handle authentication success
+   */
+  const handleAuthenticated = useCallback(() => {
+    setIsAuthenticated(true);
+    setView('dashboard');
+    navigate('/dashboard');
+  }, [navigate]);
+
+  /**
+   * Handle logout
+   */
+  const handleLogout = useCallback(() => {
+    authService.signOut();
+    setIsAuthenticated(false);
+    setSelectedAvatar(null);
+    setView('dashboard');
+    navigate('/');
+  }, [navigate]);
+
+  /**
    * Handle backend status change
    */
   const handleBackendStatusChange = useCallback((statusInfo) => {
@@ -39,7 +83,7 @@ function App() {
    * Cleanup HeyGen session when browser closes/refreshes
    */
   useEffect(() => {
-    const handleBeforeUnload = (event) => {
+    const handleBeforeUnload = () => {
       // If there's an active session, close it
       if (sessionInfo && sessionInfo.session_id) {
         console.log('Browser closing - cleaning up HeyGen session');
@@ -100,7 +144,7 @@ function App() {
     } catch (error) {
       console.error('Error creating session:', error);
       alert(`Failed to create interview session: ${error.message}`);
-      setView('grid');
+      setView('dashboard');
       setSelectedAvatar(null);
     }
   }, [createNewSession, startSession, backendReady]);
@@ -116,7 +160,7 @@ function App() {
     }
     
     setSelectedAvatar(null);
-    setView('grid');
+    setView('dashboard');
   }, [closeSession]);
 
   /**
@@ -132,37 +176,92 @@ function App() {
     }
     
     setSelectedAvatar(null);
-    setView('grid');
+    setView('dashboard');
   }, [sessionInfo, closeSession]);
+
+  // Hide navbar during interview or loading
+  const showNavbar = view !== 'interview' && view !== 'loading';
 
   return (
     <div className="app">
-      {/* Backend Status Check */}
-      <BackendStatus onStatusChange={handleBackendStatusChange} />
+      {/* Navbar - hidden during interview */}
+      {showNavbar && (
+        <Navbar 
+          isAuthenticated={isAuthenticated}
+          onAuthenticated={handleAuthenticated}
+          onLogout={handleLogout}
+        />
+      )}
 
-      {view === 'grid' && (
-        <AvatarGrid 
-          onAvatarSelect={handleAvatarSelect}
-          backendReady={backendReady}
+      {/* Backend Status Check - only when authenticated */}
+      <BackendStatus 
+        onStatusChange={handleBackendStatusChange} 
+        isAuthenticated={isAuthenticated}
+      />
+
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/" element={<LandingPage />} />
+        <Route 
+          path="/signin" 
+          element={
+            !isAuthenticated ? (
+              <Login onSuccess={handleAuthenticated} />
+            ) : (
+              <Navigate to="/dashboard" replace />
+            )
+          } 
         />
-      )}
-      
-      {view === 'loading' && selectedAvatar && (
-        <LoadingScreen 
-          avatar={selectedAvatar}
-          status={loadingStatus}
-          onCancel={handleCancelLoading}
+        <Route 
+          path="/signup" 
+          element={
+            !isAuthenticated ? (
+              <Signup onSuccess={handleAuthenticated} />
+            ) : (
+              <Navigate to="/dashboard" replace />
+            )
+          } 
         />
-      )}
-      
-      {view === 'interview' && selectedAvatar && (
-        <InterviewView 
-          avatar={selectedAvatar}
-          peerConnection={peerConnection}
-          isConnected={isConnected}
-          sendTask={sendTask}
-          onExit={handleExitInterview}
+
+        {/* Protected Routes */}
+        <Route
+          path="/dashboard"
+          element={
+            isAuthenticated ? (
+              view === 'dashboard' ? (
+                <Dashboard 
+                  onAvatarSelect={handleAvatarSelect}
+                  backendReady={backendReady}
+                />
+              ) : null
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
         />
+      </Routes>
+
+      {/* Interview views - shown when authenticated */}
+      {isAuthenticated && (
+        <>
+          {view === 'loading' && selectedAvatar && (
+            <LoadingScreen 
+              avatar={selectedAvatar}
+              status={loadingStatus}
+              onCancel={handleCancelLoading}
+            />
+          )}
+          
+          {view === 'interview' && selectedAvatar && (
+            <InterviewView 
+              avatar={selectedAvatar}
+              peerConnection={peerConnection}
+              isConnected={isConnected}
+              sendTask={sendTask}
+              onExit={handleExitInterview}
+            />
+          )}
+        </>
       )}
     </div>
   );
