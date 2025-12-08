@@ -26,8 +26,8 @@ export function Signup({ onSuccess, onSwitchToLogin }) {
       return;
     }
 
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters long');
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters long');
       return;
     }
 
@@ -99,7 +99,7 @@ export function Signup({ onSuccess, onSwitchToLogin }) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                placeholder="At least 6 characters"
+                placeholder="At least 8 characters"
                 disabled={loading}
               />
             </div>
