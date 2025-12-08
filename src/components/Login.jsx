@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/AuthService';
-import './auth.css';
+import '../styles/auth.css';
 
 export function Login({ onSuccess, onSwitchToSignup }) {
   const navigate = useNavigate();
@@ -27,7 +27,7 @@ export function Login({ onSuccess, onSwitchToSignup }) {
         navigate('/dashboard');
       }
     } catch (err) {
-      setError(err.message || 'Failed to sign in. Please check your credentials.');
+      setError(err.message || 'Failed to sign in. Please check your credentials (account may not exist).');
     } finally {
       setLoading(false);
     }

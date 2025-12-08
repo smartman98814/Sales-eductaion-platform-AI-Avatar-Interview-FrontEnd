@@ -24,7 +24,6 @@ export function InterviewView({
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [showVoiceTest, setShowVoiceTest] = useState(false);
   const [voiceTestHistory, setVoiceTestHistory] = useState([]);
-  const [avatarSpeaking, setAvatarSpeaking] = useState(false); // Track when avatar is speaking
 
   // Webcam for interviewer
   const {
@@ -68,7 +67,7 @@ export function InterviewView({
       }
       
       // Auto-send when speech is complete (only if not in test mode and avatar is not speaking)
-      if (text.trim() && conversationStarted && !isProcessing && !showVoiceTest && !avatarSpeaking) {
+      if (text.trim() && conversationStarted && !isProcessing && !showVoiceTest) {
         handleSendMessage(text);
       }
     },
@@ -279,12 +278,20 @@ export function InterviewView({
 
   /**
    * Request microphone permission and verify it works
+   * 
+   * Browser's Built-in Echo Cancellation (AEC):
+   * - Modern browsers implement AEC at the system level
+   * - Browser monitors speaker output (avatar's voice from video element)
+   * - Browser captures microphone input
+   * - Signal processing subtracts speaker output from mic input in real-time
+   * - Result: Only user's voice is captured, avatar's voice is filtered out
+   * - This allows users to speak while avatar is speaking without echo loops
    */
   const requestMicrophonePermission = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
-          echoCancellation: true,
+          echoCancellation: true,  // Browser's built-in AEC removes avatar's voice from mic input
           noiseSuppression: true,
           autoGainControl: true
         } 
@@ -296,6 +303,25 @@ export function InterviewView({
         console.warn('No audio tracks in stream');
         stream.getTracks().forEach(track => track.stop());
         return false;
+      }
+      
+      // Verify echo cancellation is actually enabled
+      const audioTrack = audioTracks[0];
+      const settings = audioTrack.getSettings();
+      
+      console.log('Microphone settings:', {
+        echoCancellation: settings.echoCancellation,
+        noiseSuppression: settings.noiseSuppression,
+        autoGainControl: settings.autoGainControl
+      });
+      
+      if (settings.echoCancellation) {
+        console.log('✓ Browser echo cancellation is ACTIVE - avatar voice will be filtered from microphone');
+        // Only show status once, not every time permission is requested
+        // updateStatus('✓ Echo cancellation enabled');
+      } else {
+        console.warn('⚠ Echo cancellation may not be active');
+        updateStatus('⚠ Echo cancellation not confirmed - use headphones for best results');
       }
       
       // Stop the stream immediately - we just needed permission
@@ -325,12 +351,6 @@ export function InterviewView({
       stopVoice();
       updateStatus('Voice input stopped');
     } else {
-      // Don't allow starting voice input while avatar is speaking
-      if (avatarSpeaking) {
-        updateStatus('Please wait for avatar to finish speaking before starting voice input');
-        return;
-      }
-      
       if (voiceSupported) {
         try {
           // Request microphone permission first
@@ -351,7 +371,7 @@ export function InterviewView({
         updateStatus('Voice input not supported in this browser. Please use Chrome, Edge, or Safari.');
       }
     }
-  }, [isVoiceActive, avatarSpeaking, voiceSupported, startVoice, stopVoice, updateStatus, requestMicrophonePermission]);
+  }, [isVoiceActive, voiceSupported, startVoice, stopVoice, updateStatus, requestMicrophonePermission]);
 
   /**
    * Start the conversation
@@ -365,9 +385,9 @@ export function InterviewView({
       await handleEnableAudio();
       
       // Send initial greeting through avatar
-      const greeting = `Hello! I'm ${avatar.name}. ${avatar.description}`;
-      await sendTask(greeting);
-      updateStatus('Conversation started!');
+      // const greeting = `Hello! I'm ${avatar.name}. ${avatar.description}`;
+      // await sendTask(greeting);
+      // updateStatus('Conversation started!');
       
       // Start voice recognition (with error handling)
       if (voiceSupported) {
@@ -399,14 +419,6 @@ export function InterviewView({
    */
   const handleSendMessage = useCallback(async (message) => {
     if (!message.trim() || isProcessing) return;
-
-    // Pause speech recognition to prevent capturing avatar's voice
-    const wasListening = isVoiceActive;
-    if (wasListening && voiceSupported) {
-      console.log('Pausing speech recognition while avatar speaks...');
-      stopVoice();
-      updateStatus('🎤 Voice input paused (avatar is speaking)');
-    }
 
     // Create timeout for backend response
     const timeoutMs = 30000; // 30 second timeout
@@ -502,53 +514,10 @@ export function InterviewView({
       // Send the full AI response to HeyGen avatar to speak
       if (fullResponse && fullResponse.trim()) {
         updateStatus(`${avatar.name}: ${fullResponse}`);
-        setAvatarSpeaking(true); // Mark avatar as speaking
         await sendTask(fullResponse);
         updateStatus('✓ Avatar speaking response');
-        
-        // Estimate speaking duration (roughly 150 words per minute, plus buffer)
-        const wordCount = fullResponse.trim().split(/\s+/).length;
-        const estimatedDuration = Math.max(4000, (wordCount / 150) * 60 * 1000 + 2000); // At least 4 seconds, add 2s buffer
-        
-        // Wait for avatar to finish speaking before resuming voice input
-        updateStatus('🎤 Voice input paused - waiting for avatar to finish...');
-        await new Promise(resolve => setTimeout(resolve, estimatedDuration));
-        setAvatarSpeaking(false); // Mark avatar as finished speaking
-        
-        // Resume voice input if it was active before
-        if (wasListening && voiceSupported && conversationStarted && !showVoiceTest) {
-          console.log('Resuming speech recognition after avatar finished speaking...');
-          try {
-            // Small delay to ensure audio has stopped
-            await new Promise(resolve => setTimeout(resolve, 500));
-            const hasPermission = await requestMicrophonePermission();
-            if (hasPermission) {
-              startVoice();
-              updateStatus('🎤 Voice input resumed - you can speak now');
-            } else {
-              updateStatus('⚠️ Microphone permission required to resume voice input');
-            }
-          } catch (error) {
-            console.error('Error resuming voice input:', error);
-            updateStatus('⚠️ Could not resume voice input - click mic button to restart');
-          }
-        }
       } else {
         updateStatus('⚠️ No response received from AI');
-        setAvatarSpeaking(false); // Ensure avatar is not marked as speaking
-        // Resume voice input even if no response
-        if (wasListening && voiceSupported && conversationStarted && !showVoiceTest) {
-          try {
-            await new Promise(resolve => setTimeout(resolve, 500));
-            const hasPermission = await requestMicrophonePermission();
-            if (hasPermission) {
-              startVoice();
-              updateStatus('🎤 Voice input resumed');
-            }
-          } catch (error) {
-            console.error('Error resuming voice input:', error);
-          }
-        }
       }
 
       setCurrentResponse('');
@@ -560,23 +529,8 @@ export function InterviewView({
       updateStatus('Tip: Check backend terminal for errors');
       setIsProcessing(false);
       setCurrentResponse('');
-      
-      setAvatarSpeaking(false); // Ensure avatar is not marked as speaking on error
-      // Resume voice input on error if it was active before
-      if (wasListening && voiceSupported && conversationStarted && !showVoiceTest) {
-        try {
-          await new Promise(resolve => setTimeout(resolve, 500));
-          const hasPermission = await requestMicrophonePermission();
-          if (hasPermission) {
-            startVoice();
-            updateStatus('🎤 Voice input resumed');
-          }
-        } catch (resumeError) {
-          console.error('Error resuming voice input:', resumeError);
-        }
-      }
     }
-  }, [avatar.id, avatar.name, threadId, sendTask, updateStatus, isProcessing, isVoiceActive, voiceSupported, conversationStarted, showVoiceTest, avatarSpeaking, stopVoice, startVoice, requestMicrophonePermission]);
+  }, [avatar.id, avatar.name, threadId, sendTask, updateStatus, isProcessing]);
 
   /**
    * Handle exit interview
@@ -682,12 +636,11 @@ export function InterviewView({
         ) : (
           <div className="conversation-controls">
             <VoiceIndicator 
-              isActive={isVoiceActive && !avatarSpeaking}
+              isActive={isVoiceActive}
               transcript={interimTranscript}
-              isProcessing={isProcessing || avatarSpeaking}
+              isProcessing={isProcessing}
               onToggle={handleToggleVoice}
               voiceSupported={voiceSupported}
-              avatarSpeaking={avatarSpeaking}
             />
             <TextInput
               onSend={handleSendMessage}
@@ -756,21 +709,15 @@ export function InterviewView({
  * Voice Indicator Component
  * Shows voice recognition status and interim transcript
  */
-function VoiceIndicator({ isActive, transcript, isProcessing, onToggle, voiceSupported, avatarSpeaking }) {
+function VoiceIndicator({ isActive, transcript, isProcessing, onToggle, voiceSupported }) {
   return (
     <div className="voice-indicator">
       <div className="voice-status">
         <button
-          className={`mic-button ${isActive ? 'mic-active' : ''} ${isProcessing || avatarSpeaking ? 'mic-disabled' : ''}`}
+          className={`mic-button ${isActive ? 'mic-active' : ''} ${isProcessing ? 'mic-disabled' : ''}`}
           onClick={onToggle}
-          disabled={isProcessing || avatarSpeaking || !voiceSupported}
-          title={
-            avatarSpeaking 
-              ? 'Avatar is speaking - voice input paused' 
-              : isActive 
-                ? 'Click to stop voice input' 
-                : 'Click to start voice input'
-          }
+          disabled={isProcessing || !voiceSupported}
+          title={isActive ? 'Click to stop voice input' : 'Click to start voice input'}
           type="button"
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -781,9 +728,7 @@ function VoiceIndicator({ isActive, transcript, isProcessing, onToggle, voiceSup
           </svg>
         </button>
         <div className="voice-text">
-          {avatarSpeaking ? (
-            <span className="status-processing">🔊 Avatar is speaking - voice input paused</span>
-          ) : isProcessing ? (
+          {isProcessing ? (
             <span className="status-processing">Processing AI response...</span>
           ) : isActive && transcript ? (
             <span className="status-listening">{transcript}</span>

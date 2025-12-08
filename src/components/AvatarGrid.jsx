@@ -12,7 +12,7 @@ export function AvatarGrid({ onAvatarSelect, backendReady }) {
 
   const handleAvatarHover = (avatar, event) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const viewportHeight = window.innerHeight;
+    // const viewportHeight = window.innerHeight;
     
     // Check if avatar is in first row (IDs 1-5) or if there's not enough space above
     const isFirstRow = avatar.id <= 5;

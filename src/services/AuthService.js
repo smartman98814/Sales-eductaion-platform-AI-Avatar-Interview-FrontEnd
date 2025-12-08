@@ -8,6 +8,15 @@ const TOKEN_KEY = 'auth_token';
 const USER_KEY = 'auth_user';
 
 class AuthService {
+  async parseError(response) {
+    try {
+      const data = await response.json();
+      return data?.detail || data?.message || `HTTP ${response.status}`;
+    } catch (e) {
+      return `HTTP ${response.status}`;
+    }
+  }
+
   /**
    * Sign up a new user
    */
@@ -22,8 +31,8 @@ class AuthService {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Sign up failed');
+        const message = await this.parseError(response);
+        throw new Error(message || 'Sign up failed');
       }
 
       const data = await response.json();
@@ -50,8 +59,13 @@ class AuthService {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Sign in failed');
+        const message = await this.parseError(response);
+        // Friendly message for unregistered/invalid users
+        const friendly =
+          response.status === 401
+            ? 'Incorrect email or password (or account not found).'
+            : message || 'Sign in failed';
+        throw new Error(friendly);
       }
 
       const data = await response.json();
@@ -128,6 +142,64 @@ class AuthService {
   getAuthHeader() {
     const token = this.getToken();
     return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  /**
+   * Update profile (username and/or password)
+   */
+  async updateProfile({ username, currentPassword, newPassword }) {
+    const body = {
+      username: username || undefined,
+      current_password: currentPassword || undefined,
+      new_password: newPassword || undefined,
+    };
+
+    const response = await fetch(`${config.backend.baseUrl}/api/auth/profile`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...this.getAuthHeader(),
+      },
+      body: JSON.stringify(body),
+    });
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = data?.detail || (await this.parseError(response));
+      throw new Error(message || 'Failed to update profile');
+    }
+
+    // Refresh stored token and user
+    if (data?.access_token) {
+      this.setToken(data.access_token);
+    }
+    if (data?.user) {
+      this.setUser(data.user);
+    }
+    return data;
+  }
+
+  /**
+   * Delete account (requires current password)
+   */
+  async deleteAccount(currentPassword) {
+    const response = await fetch(`${config.backend.baseUrl}/api/auth/profile`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        ...this.getAuthHeader(),
+      },
+      body: JSON.stringify({ current_password: currentPassword }),
+    });
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = data?.detail || (await this.parseError(response));
+      throw new Error(message || 'Failed to delete account');
+    }
+
+    this.signOut();
+    return data;
   }
 
   /**

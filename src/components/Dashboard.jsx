@@ -3,7 +3,7 @@
  * Main dashboard view for authenticated users
  */
 import { AvatarGrid } from './AvatarGrid';
-import './dashboard.css';
+import '../styles/dashboard.css';
 
 export function Dashboard({ onAvatarSelect, backendReady }) {
   return (

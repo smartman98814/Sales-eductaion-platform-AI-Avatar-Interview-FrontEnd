@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/AuthService';
-import './auth.css';
+import '../styles/auth.css';
 
 export function Signup({ onSuccess, onSwitchToLogin }) {
   const navigate = useNavigate();
