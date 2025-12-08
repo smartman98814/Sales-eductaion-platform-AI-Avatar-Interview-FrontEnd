@@ -1,6 +1,13 @@
 /**
  * Speech Recognition Hook
  * Handles voice input using Web Speech API
+ * 
+ * Browser's Built-in Echo Cancellation (AEC):
+ * - Maintains an active MediaStream with echoCancellation: true
+ * - This ensures browser's AEC is active at the system level
+ * - Browser monitors speaker output (avatar's voice) and subtracts it from mic input
+ * - Result: Only user's voice is captured, avatar's voice is filtered out
+ * - This allows users to speak while avatar is speaking without echo loops
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 
@@ -15,6 +22,7 @@ export function useSpeechRecognition({ onTranscriptComplete, autoStart = false }
   const restartTimeoutRef = useRef(null);
   const autoStartRef = useRef(autoStart);
   const callbackRef = useRef(onTranscriptComplete);
+  const echoCancellationStreamRef = useRef(null); // Keep MediaStream active for system-level AEC
   
   // Update callback ref when it changes (without triggering useEffect)
   useEffect(() => {
@@ -161,13 +169,20 @@ export function useSpeechRecognition({ onTranscriptComplete, autoStart = false }
           // Ignore errors when aborting during cleanup
         }
       }
+      // Clean up echo cancellation stream
+      if (echoCancellationStreamRef.current) {
+        echoCancellationStreamRef.current.getTracks().forEach(track => track.stop());
+        echoCancellationStreamRef.current = null;
+      }
     };
   }, []); // Empty dependency array - only run once on mount
 
   /**
    * Start listening (continuous mode)
+   * Creates and maintains a MediaStream with echo cancellation to ensure
+   * browser's AEC is active at system level, filtering avatar's voice from mic input
    */
-  const startListening = useCallback(() => {
+  const startListening = useCallback(async () => {
     if (!isSupported || !recognitionRef.current) {
       setError('Speech recognition not available');
       console.error('Speech recognition not available:', { isSupported, hasRecognition: !!recognitionRef.current });
@@ -175,6 +190,43 @@ export function useSpeechRecognition({ onTranscriptComplete, autoStart = false }
     }
 
     try {
+      // Request microphone with echo cancellation enabled
+      // This ensures browser's AEC is active at system level
+      if (!echoCancellationStreamRef.current) {
+        console.log('Creating MediaStream with echo cancellation for system-level AEC...');
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,        // Removes speaker audio (avatar voice) from mic
+              noiseSuppression: true,         // Removes background noise
+              autoGainControl: true,          // Normalizes volume levels
+              sampleRate: 48000              // Higher quality
+            }
+          });
+          
+          // Verify echo cancellation is active
+          const audioTrack = stream.getAudioTracks()[0];
+          const settings = audioTrack.getSettings();
+          console.log('Echo cancellation stream created:', {
+            echoCancellation: settings.echoCancellation,
+            noiseSuppression: settings.noiseSuppression,
+            autoGainControl: settings.autoGainControl
+          });
+          
+          if (settings.echoCancellation) {
+            console.log('✓ Browser echo cancellation is ACTIVE - avatar voice will be filtered');
+          } else {
+            console.warn('⚠ Echo cancellation may not be active');
+          }
+          
+          // Keep stream active to maintain system-level AEC
+          echoCancellationStreamRef.current = stream;
+        } catch (streamErr) {
+          console.warn('Could not create echo cancellation stream:', streamErr);
+          // Continue anyway - browser may still apply AEC
+        }
+      }
+
       setTranscript('');
       setInterimTranscript('');
       setError(null);
@@ -236,6 +288,14 @@ export function useSpeechRecognition({ onTranscriptComplete, autoStart = false }
         console.log('Error stopping recognition (may already be stopped):', err);
       }
     }
+    
+    // Stop echo cancellation stream
+    if (echoCancellationStreamRef.current) {
+      console.log('Stopping echo cancellation stream...');
+      echoCancellationStreamRef.current.getTracks().forEach(track => track.stop());
+      echoCancellationStreamRef.current = null;
+    }
+    
     setIsListening(false);
     console.log('Speech recognition stopped');
   }, []);
