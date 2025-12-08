@@ -9,6 +9,42 @@ import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { agentService } from '../services/AgentService';
 import '../styles/interviewView.css';
 
+// Normalize text into ordered word list, using "backspace" separators per spec
+function toNormalizedWords(text = '') {
+  // Replace punctuation/newlines with the literal token "backspace"
+  let normalized = text
+    .toLowerCase()
+    .replace(/[.,!?]/g, ' backspace ')
+    .replace(/\n/g, ' backspace ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Collapse consecutive "backspace" tokens into one
+  normalized = normalized.replace(/\bbackspace\b(?:\s+\bbackspace\b)+/g, 'backspace');
+
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  // Keep only real words, discard the backspace separators
+  return tokens.filter((t) => t !== 'backspace');
+}
+
+// Count ordered matching n-word phrases (contiguous) between two lists
+function countOrderedPhraseMatches(wordsA, wordsB, n = 4) {
+  if (wordsA.length < n || wordsB.length < n) return 0;
+  let count = 0;
+  for (let i = 0; i <= wordsA.length - n; i += 1) {
+    const sliceA = wordsA.slice(i, i + n).join(' ');
+    for (let j = 0; j <= wordsB.length - n; j += 1) {
+      const sliceB = wordsB.slice(j, j + n).join(' ');
+      if (sliceA === sliceB) {
+        count += 1;
+        break; // avoid double-counting the same phrase in B
+      }
+    }
+    if (count >= 1) break; // Stop after first match found
+  }
+  return count;
+}
+
 export function InterviewView({ 
   avatar, 
   peerConnection,
@@ -24,6 +60,7 @@ export function InterviewView({
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [showVoiceTest, setShowVoiceTest] = useState(false);
   const [voiceTestHistory, setVoiceTestHistory] = useState([]);
+  const lastAiWordsRef = useRef([]); // Ref to store last AI response words for echo detection
 
   // Webcam for interviewer
   const {
@@ -68,6 +105,14 @@ export function InterviewView({
       
       // Auto-send when speech is complete (only if not in test mode and avatar is not speaking)
       if (text.trim() && conversationStarted && !isProcessing && !showVoiceTest) {
+        // Check if recognized speech matches the avatar's recent response (echo detection)
+        const userWords = toNormalizedWords(text);
+        const matches = countOrderedPhraseMatches(userWords, lastAiWordsRef.current, 4);
+        if (matches >= 1) {
+          console.log('⚠️ Blocked sending - recognized text matches avatar response (likely echo)');
+          updateStatus('⚠️ Blocked: Detected avatar voice echo - not sending to OpenAI');
+          return;
+        }
         handleSendMessage(text);
       }
     },
@@ -514,6 +559,8 @@ export function InterviewView({
       // Send the full AI response to HeyGen avatar to speak
       if (fullResponse && fullResponse.trim()) {
         updateStatus(`${avatar.name}: ${fullResponse}`);
+        // Store normalized words from AI response to detect echo loops
+        lastAiWordsRef.current = toNormalizedWords(fullResponse);
         await sendTask(fullResponse);
         updateStatus('✓ Avatar speaking response');
       } else {
