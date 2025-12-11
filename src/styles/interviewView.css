@@ -1,17 +1,32 @@
 /* Interview View Styles */
 
 .interview-container {
-  position: relative;
+  position: fixed;
+  top: 0;
+  left: 0;
   width: 100vw;
   height: 100vh;
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   overflow: hidden;
   display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px;
+  gap: 20px;
+  z-index: 1000;
+}
+
+/* Main Content Area (Left side - Avatar and Webcam) */
+.interview-main-content {
+  flex: 1;
+  display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 20px;
-  gap: 20px;
+  position: relative;
+  height: 100%;
+  max-width: calc(100% - 400px);
 }
 
 /* Initial Controls (Before Interview Starts) */
@@ -35,6 +50,14 @@
   border: 3px solid #667eea;
   z-index: 100;
   background: #1a1a2e;
+}
+
+/* Adjust webcam position for main content area */
+.interview-main-content .webcam-container-top {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .webcam-video {

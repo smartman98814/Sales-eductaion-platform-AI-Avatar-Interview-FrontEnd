@@ -1,14 +1,14 @@
 /**
  * Backend Status Component
- * Shows backend connection status and allows initialization
+ * Shows backend connection status (for LiveKit token generation)
+ * Note: LiveKit agents run separately, so we only check backend connectivity
  */
 import { useState, useEffect } from 'react';
 import { agentService } from '../services/AgentService';
 import '../styles/backendStatus.css';
 
 export function BackendStatus({ onStatusChange, isAuthenticated }) {
-  const [status, setStatus] = useState('idle'); // 'idle', 'checking', 'connected', 'error', 'initializing'
-  const [agentsReady, setAgentsReady] = useState(false);
+  const [status, setStatus] = useState('idle'); // 'idle', 'checking', 'connected', 'error'
   const [error, setError] = useState(null);
 
   const checkBackendStatus = async () => {
@@ -16,39 +16,17 @@ export function BackendStatus({ onStatusChange, isAuthenticated }) {
       setStatus('checking');
       setError(null);
 
-      // Check if backend is running
-      const agents = await agentService.getAllAgents();
+      // Just check if backend is reachable (for LiveKit token generation)
+      await agentService.checkHealth();
       
-      // Check if agents are initialized (have assistant_id)
-      const allReady = agents.length === 10 && agents.every(a => a.assistant_id);
-      
-      setAgentsReady(allReady);
       setStatus('connected');
-      onStatusChange?.({ connected: true, agentsReady: allReady });
-
-      if (!allReady) {
-        // Try to auto-initialize
-        await handleInitialize();
-      }
+      // LiveKit agents run separately, so we always mark as ready if backend is connected
+      onStatusChange?.({ connected: true, agentsReady: true });
     } catch (err) {
       console.error('Backend check failed:', err);
       setError(err.message);
       setStatus('error');
       onStatusChange?.({ connected: false, agentsReady: false });
-    }
-  };
-
-  const handleInitialize = async () => {
-    try {
-      setStatus('initializing');
-      await agentService.initializeAgents();
-      setAgentsReady(true);
-      setStatus('connected');
-      onStatusChange?.({ connected: true, agentsReady: true });
-    } catch (err) {
-      console.error('Initialization failed:', err);
-      setError(err.message);
-      setStatus('error');
     }
   };
 
@@ -59,7 +37,6 @@ export function BackendStatus({ onStatusChange, isAuthenticated }) {
     } else {
       // Reset status when not authenticated
       setStatus('idle');
-      setAgentsReady(false);
       setError(null);
       onStatusChange?.({ connected: false, agentsReady: false });
     }
@@ -71,8 +48,8 @@ export function BackendStatus({ onStatusChange, isAuthenticated }) {
     return null;
   }
 
-  if (status === 'connected' && agentsReady) {
-    return null; // Hide when everything is working
+  if (status === 'connected') {
+    return null; // Hide when backend is connected
   }
 
   return (
@@ -84,14 +61,6 @@ export function BackendStatus({ onStatusChange, isAuthenticated }) {
           <div className="status-content">
             <div className="spinner-large"></div>
             <p>Checking backend connection...</p>
-          </div>
-        )}
-
-        {status === 'initializing' && (
-          <div className="status-content">
-            <div className="spinner-large"></div>
-            <p>Initializing AI agents...</p>
-            <p className="status-hint">This may take 10-15 seconds</p>
           </div>
         )}
 
@@ -109,8 +78,8 @@ export function BackendStatus({ onStatusChange, isAuthenticated }) {
               <strong>Troubleshooting:</strong>
               <ul>
                 <li>Ensure backend is running: <code>python run.py</code></li>
-                <li>Check backend URL in .env: <code>{agentService.baseUrl}</code></li>
-                <li>Verify OpenAI API key is configured in backend</li>
+                <li>Check backend URL in config: <code>{agentService.baseUrl}</code></li>
+                <li>Verify LiveKit credentials are configured in backend .env</li>
               </ul>
             </div>
           </div>

@@ -13,6 +13,7 @@ import { ProfileSettings } from './components/ProfileSettings';
 import { InterviewView } from './components/InterviewView';
 import { LoadingScreen } from './components/LoadingScreen';
 import { BackendStatus } from './components/BackendStatus';
+import { livekitService } from './services/LiveKitService';
 import { useStreamingSession } from './hooks/useStreamingSession';
 import { heygenService } from './services/HeyGenService';
 import { authService } from './services/AuthService';
@@ -24,12 +25,30 @@ function App() {
   const [view, setView] = useState('dashboard'); // 'dashboard', 'loading', or 'interview'
   const [loadingStatus, setLoadingStatus] = useState('Initializing...');
   const [backendReady, setBackendReady] = useState(false);
+  const [livekitRoom, setLivekitRoom] = useState(null);
 
-  // HeyGen streaming session hook
+  // Debug: Log view state changes and force reset if stuck
+  useEffect(() => {
+    console.log('🔍 View state changed:', view, 'selectedAvatar:', selectedAvatar?.id, 'livekitRoom:', !!livekitRoom);
+    
+    // If stuck in loading/interview for more than 30 seconds, reset to dashboard
+    if ((view === 'loading' || view === 'interview') && !livekitRoom) {
+      const timeout = setTimeout(() => {
+        console.warn('⚠️ View stuck in', view, '- resetting to dashboard');
+        setView('dashboard');
+        setSelectedAvatar(null);
+        setLoadingStatus('Initializing...');
+      }, 30000); // 30 seconds
+      
+      return () => clearTimeout(timeout);
+    }
+  }, [view, selectedAvatar, livekitRoom]);
+
+  // HeyGen streaming session hook (for video)
   const {
     sessionInfo,
     peerConnection,
-    isConnected,
+    isConnected: heygenConnected,
     createNewSession,
     startSession,
     sendTask,
@@ -75,20 +94,26 @@ function App() {
 
   /**
    * Handle backend status change
+   * With LiveKit, we only need backend for token generation, so if connected, we're ready
    */
   const handleBackendStatusChange = useCallback((statusInfo) => {
-    setBackendReady(statusInfo.connected && statusInfo.agentsReady);
+    setBackendReady(statusInfo.connected);
   }, []);
 
   /**
-   * Cleanup HeyGen session when browser closes/refreshes
+   * Cleanup sessions when browser closes/refreshes
    */
   useEffect(() => {
     const handleBeforeUnload = () => {
-      // If there's an active session, close it
+      // Cleanup HeyGen session
       if (sessionInfo && sessionInfo.session_id) {
         console.log('Browser closing - cleaning up HeyGen session');
         heygenService.stopSessionSync(sessionInfo.session_id);
+      }
+      // Cleanup LiveKit room
+      if (livekitRoom) {
+        console.log('Browser closing - cleaning up LiveKit room');
+        livekitService.disconnect();
       }
     };
 
@@ -99,10 +124,10 @@ function App() {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [sessionInfo]);
+  }, [sessionInfo, livekitRoom]);
 
   /**
-   * Handle avatar selection - Start HeyGen session immediately
+   * Handle avatar selection - Connect to both HeyGen (video) and LiveKit (audio/text)
    */
   const handleAvatarSelect = useCallback(async (avatar) => {
     if (!backendReady) {
@@ -115,17 +140,17 @@ function App() {
     setLoadingStatus('Creating HeyGen session...');
 
     try {
-      // Create HeyGen session with avatar's settings
-      setLoadingStatus('Connecting to avatar...');
+      // Step 1: Create HeyGen session for video
+      setLoadingStatus('Connecting to HeyGen avatar...');
       await createNewSession(
         avatar.heygenAvatarId,
         avatar.heygenVoiceId,
         'low' // quality
       );
 
-      setLoadingStatus('Starting video stream...');
+      setLoadingStatus('Starting HeyGen video stream...');
       
-      // Start the session
+      // Start the HeyGen session
       const onDataChannel = (event) => {
         const dataChannel = event.channel;
         dataChannel.onmessage = () => {
@@ -134,8 +159,46 @@ function App() {
       };
 
       await startSession(null, onDataChannel);
+      setLoadingStatus('HeyGen video connected ✓');
 
-      setLoadingStatus('Session ready!');
+      // Step 2: Connect to LiveKit for audio/text
+      setLoadingStatus('Connecting to LiveKit agent...');
+      // Use a fixed room name for testing (easier for agent to connect)
+      // Change back to dynamic name once agent auto-join is configured
+      const roomName = `room-avatar-${avatar.id}`; // Fixed room name per avatar
+      // const roomName = `room-${avatar.id}-${Date.now()}`; // Dynamic (original)
+      const participantName = `user-${Date.now()}`;
+      
+      // Log room name for agent configuration
+      console.log('🔷 Connecting to LiveKit room:', roomName);
+      console.log('🔷 IMPORTANT: Configure your LiveKit agent to join rooms matching pattern: room-avatar-*');
+      console.log('🔷 Or configure agent to auto-join when participants connect');
+      
+      // Connect to LiveKit room
+      const room = await livekitService.connectToRoom(
+        roomName,
+        participantName,
+        avatar.id,
+        (track, publication, participant) => {
+          console.log('LiveKit track subscribed in App:', track.kind, 'from', participant.identity);
+          // Track handling is done in InterviewView component
+        },
+        (participant) => {
+          console.log('LiveKit participant connected:', participant.identity);
+          setLoadingStatus('LiveKit agent connected ✓');
+        },
+        () => {
+          console.log('Disconnected from LiveKit room');
+          setLivekitRoom(null);
+        }
+      );
+
+      setLivekitRoom(room);
+      
+      // Agent will auto-join via roomConfig in the token (no manual dispatch needed)
+      setLoadingStatus('Waiting for agent to join...');
+      
+      setLoadingStatus('All connections ready!');
       
       // Wait a brief moment then transition to interview
       setTimeout(() => {
@@ -143,10 +206,19 @@ function App() {
       }, 500);
 
     } catch (error) {
-      console.error('Error creating session:', error);
-      alert(`Failed to create interview session: ${error.message}`);
+      console.error('❌ Error creating session:', error);
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+      alert(`Failed to create interview session: ${error.message}\n\nCheck browser console (F12) for details.`);
+      // Reset all state to ensure clean dashboard view
       setView('dashboard');
       setSelectedAvatar(null);
+      setLivekitRoom(null);
+      setLoadingStatus('Initializing...');
+      console.log('✅ State reset to dashboard');
     }
   }, [createNewSession, startSession, backendReady]);
 
@@ -155,11 +227,15 @@ function App() {
    */
   const handleExitInterview = useCallback(async () => {
     try {
+      // Disconnect from LiveKit
+      await livekitService.disconnect();
+      // Close HeyGen session
       await closeSession();
     } catch (error) {
-      console.error('Error closing session:', error);
+      console.error('Error closing sessions:', error);
     }
     
+    setLivekitRoom(null);
     setSelectedAvatar(null);
     setView('dashboard');
   }, [closeSession]);
@@ -169,6 +245,9 @@ function App() {
    */
   const handleCancelLoading = useCallback(async () => {
     try {
+      if (livekitRoom) {
+        await livekitService.disconnect();
+      }
       if (sessionInfo) {
         await closeSession();
       }
@@ -176,9 +255,10 @@ function App() {
       console.error('Error canceling:', error);
     }
     
+    setLivekitRoom(null);
     setSelectedAvatar(null);
     setView('dashboard');
-  }, [sessionInfo, closeSession]);
+  }, [livekitRoom, sessionInfo, closeSession]);
 
   // Hide navbar during interview or loading
   const showNavbar = view !== 'interview' && view !== 'loading';
@@ -199,6 +279,39 @@ function App() {
         onStatusChange={handleBackendStatusChange} 
         isAuthenticated={isAuthenticated}
       />
+
+      {/* Debug Panel - Remove in production */}
+      {process.env.NODE_ENV === 'development' && (
+        <div style={{
+          position: 'fixed',
+          top: '10px',
+          right: '10px',
+          background: 'rgba(0,0,0,0.8)',
+          color: 'white',
+          padding: '10px',
+          fontSize: '12px',
+          zIndex: 9999,
+          borderRadius: '4px',
+          fontFamily: 'monospace'
+        }}>
+          <div>View: <strong>{view}</strong></div>
+          <div>Auth: {isAuthenticated ? '✅' : '❌'}</div>
+          <div>Backend: {backendReady ? '✅' : '❌'}</div>
+          <div>Avatar: {selectedAvatar ? selectedAvatar.id : 'none'}</div>
+          <div>LiveKit: {livekitRoom ? '✅' : '❌'}</div>
+          <button 
+            onClick={() => {
+              setView('dashboard');
+              setSelectedAvatar(null);
+              setLivekitRoom(null);
+              console.log('🔄 Manual reset to dashboard');
+            }}
+            style={{ marginTop: '5px', padding: '5px', cursor: 'pointer' }}
+          >
+            Reset to Dashboard
+          </button>
+        </div>
+      )}
 
       <Routes>
         {/* Public Routes */}
@@ -239,12 +352,10 @@ function App() {
           path="/dashboard"
           element={
             isAuthenticated ? (
-              view === 'dashboard' ? (
-                <Dashboard 
-                  onAvatarSelect={handleAvatarSelect}
-                  backendReady={backendReady}
-                />
-              ) : null
+              <Dashboard 
+                onAvatarSelect={handleAvatarSelect}
+                backendReady={backendReady}
+              />
             ) : (
               <Navigate to="/" replace />
             )
@@ -263,12 +374,13 @@ function App() {
             />
           )}
           
-          {view === 'interview' && selectedAvatar && (
+          {view === 'interview' && selectedAvatar && livekitRoom && (
             <InterviewView 
               avatar={selectedAvatar}
-              peerConnection={peerConnection}
-              isConnected={isConnected}
-              sendTask={sendTask}
+              peerConnection={peerConnection || null}
+              isConnected={heygenConnected}
+              livekitRoom={livekitRoom}
+              sendTaskToHeyGen={sendTask}
               onExit={handleExitInterview}
             />
           )}
