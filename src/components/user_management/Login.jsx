@@ -4,8 +4,8 @@
  */
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { authService } from '../services/AuthService';
-import '../styles/auth.css';
+import { authService } from '../../services/AuthService';
+import '../../styles/auth.css';
 
 export function Login({ onSuccess, onSwitchToSignup }) {
   const navigate = useNavigate();
@@ -27,7 +27,16 @@ export function Login({ onSuccess, onSwitchToSignup }) {
         navigate('/dashboard');
       }
     } catch (err) {
-      setError(err.message || 'Failed to sign in. Please check your credentials (account may not exist).');
+      // Handle error object properly - extract message or convert to string
+      let errorMessage = 'Failed to sign in. Please check your credentials (account may not exist).';
+      if (err instanceof Error) {
+        errorMessage = err.message || errorMessage;
+      } else if (typeof err === 'string') {
+        errorMessage = err;
+      } else if (err && typeof err === 'object') {
+        errorMessage = err.message || err.detail || JSON.stringify(err);
+      }
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -83,8 +92,7 @@ export function Login({ onSuccess, onSwitchToSignup }) {
           </form>
 
           <div className="auth-switch">
-            <p>
-              Don't have an account?{' '}
+            <p> Don&apos;t have an account?{' '}
               <button type="button" onClick={handleSwitchToSignup} className="auth-link-button">
                 Sign Up
               </button>

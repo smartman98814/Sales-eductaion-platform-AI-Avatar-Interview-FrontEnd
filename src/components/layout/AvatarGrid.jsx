@@ -3,8 +3,8 @@
  * Displays 10 avatars in a 2x5 grid with hover details
  */
 import { useState } from 'react';
-import { AVATARS } from '../data/avatarData';
-import '../styles/avatarGrid.css';
+import { AVATARS } from '../../data/avatarData';
+import '../../styles/avatarGrid.css';
 
 export function AvatarGrid({ onAvatarSelect, backendReady }) {
   const [hoveredAvatar, setHoveredAvatar] = useState(null);

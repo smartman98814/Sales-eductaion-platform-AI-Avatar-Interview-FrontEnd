@@ -2,8 +2,8 @@
  * Landing Page Component
  * Floral Image company brand page
  */
-import { AVATARS } from '../data/avatarData';
-import '../styles/landing.css';
+import { AVATARS } from '../../data/avatarData';
+import '../../styles/landing.css';
 
 export function LandingPage() {
   // Get Patricia, Rick, and Sofia avatars

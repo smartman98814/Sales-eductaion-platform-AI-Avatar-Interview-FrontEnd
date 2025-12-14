@@ -4,8 +4,8 @@
  */
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
-import { authService } from '../services/AuthService';
-import '../styles/navbar.css';
+import { authService } from '../../services/AuthService';
+import '../../styles/navbar.css';
 
 export function Navbar({ isAuthenticated, onLogout }) {
   const navigate = useNavigate();

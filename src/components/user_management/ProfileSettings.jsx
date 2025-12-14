@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { authService } from '../services/AuthService';
-import '../styles/profileSettings.css';
+import { authService } from '../../services/AuthService';
+import '../../styles/profileSettings.css';
 
 export function ProfileSettings({ onLogout }) {
   const user = authService.getUser();

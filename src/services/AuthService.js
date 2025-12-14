@@ -11,9 +11,59 @@ class AuthService {
   async parseError(response) {
     try {
       const data = await response.json();
-      return data?.detail || data?.message || `HTTP ${response.status}`;
+      
+      // Handle FastAPI validation errors (detail is an array)
+      if (data?.detail) {
+        if (Array.isArray(data.detail)) {
+          // Format validation errors with user-friendly messages
+          return data.detail
+            .map(err => {
+              const field = err.loc ? err.loc.slice(1).join('.') : 'unknown';
+              let message = err.msg || err.message || 'validation error';
+              
+              // Make error messages more user-friendly
+              if (message.includes('pattern') || message.includes('match pattern')) {
+                if (field === 'username') {
+                  message = 'Username can only contain letters, numbers, spaces, hyphens, and underscores';
+                } else if (field === 'email') {
+                  message = 'Please enter a valid email address';
+                } else {
+                  message = `Invalid ${field} format`;
+                }
+              } else if (message.includes('String should have at least')) {
+                const match = message.match(/at least (\d+)/);
+                const minLength = match ? match[1] : 'minimum';
+                if (field === 'username') {
+                  message = `Username must be at least ${minLength} characters long`;
+                } else if (field === 'password') {
+                  message = `Password must be at least ${minLength} characters long`;
+                }
+              } else if (message.includes('String should have at most')) {
+                const match = message.match(/at most (\d+)/);
+                const maxLength = match ? match[1] : 'maximum';
+                if (field === 'username') {
+                  message = `Username must be at most ${maxLength} characters long`;
+                }
+              }
+              
+              return `${field === 'body' ? '' : field.charAt(0).toUpperCase() + field.slice(1) + ': '}${message}`;
+            })
+            .join('; ');
+        } else if (typeof data.detail === 'string') {
+          return data.detail;
+        } else {
+          return JSON.stringify(data.detail);
+        }
+      }
+      
+      // Handle other error formats
+      if (data?.message) {
+        return typeof data.message === 'string' ? data.message : JSON.stringify(data.message);
+      }
+      
+      return `HTTP ${response.status}: ${response.statusText || 'Error'}`;
     } catch (e) {
-      return `HTTP ${response.status}`;
+      return `HTTP ${response.status}: ${response.statusText || 'Error'}`;
     }
   }
 
@@ -227,7 +277,6 @@ class AuthService {
         return false;
       }
     } catch (error) {
-      console.error('Token verification error:', error);
       this.signOut();
       return false;
     }

@@ -16,34 +16,29 @@ export class HeyGenService {
    * @returns {Promise<Array>} Array of voice objects with id and name
    */
   async fetchVoices() {
-    try {
-      // Try v2 endpoint first (recommended)
-      let response = await fetchWithRetry(`${this.serverUrl}/v2/voices`, {
+    // Try v2 endpoint first (recommended)
+    let response = await fetchWithRetry(`${this.serverUrl}/v2/voices`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Key': this.apiKey,
+      },
+    }, 3, 30000);
+
+    // If v2 fails, try v1
+    if (!response.ok) {
+      response = await fetchWithRetry(`${this.serverUrl}/v1/voices.list`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           'X-Api-Key': this.apiKey,
         },
       }, 3, 30000);
+    }
 
-      // If v2 fails, try v1
-      if (!response.ok) {
-        response = await fetchWithRetry(`${this.serverUrl}/v1/voices.list`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Api-Key': this.apiKey,
-          },
-        }, 3, 30000);
-      }
-
-      if (response.ok) {
-        const data = await response.json();
-        return this._parseVoicesResponse(data);
-      }
-    } catch (error) {
-      console.error('Error fetching voices:', error);
-      throw error;
+    if (response.ok) {
+      const data = await response.json();
+      return this._parseVoicesResponse(data);
     }
     
     return [];
@@ -54,23 +49,18 @@ export class HeyGenService {
    * @returns {Promise<Array>} Array of avatar objects with id and name
    */
   async fetchAvatars() {
-    try {
-      const endpoint = `${this.serverUrl}/v1/streaming/avatar.list`;
-      const response = await fetchWithRetry(endpoint, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Api-Key': this.apiKey,
-        },
-      }, 3, 30000);
+    const endpoint = `${this.serverUrl}/v1/streaming/avatar.list`;
+    const response = await fetchWithRetry(endpoint, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Key': this.apiKey,
+      },
+    }, 3, 30000);
 
-      if (response.ok) {
-        const data = await response.json();
-        return this._parseAvatarsResponse(data);
-      }
-    } catch (error) {
-      console.error('Error fetching avatars:', error);
-      throw error;
+    if (response.ok) {
+      const data = await response.json();
+      return this._parseAvatarsResponse(data);
     }
     
     return [];
@@ -216,19 +206,14 @@ export class HeyGenService {
         session_id: sessionId 
       });
       
-      console.log('Stopping HeyGen session on page unload:', sessionId);
-      
       // Method 1: sendBeacon (most reliable for page unload)
       // Note: sendBeacon has limitations with custom headers
       const blob = new Blob([payload], { type: 'application/json' });
       const beaconUrl = `${url}?x-api-key=${encodeURIComponent(this.apiKey)}`;
       const sent = navigator.sendBeacon(beaconUrl, blob);
       
-      if (sent) {
-        console.log('Session cleanup beacon sent');
-      } else {
+      if (!sent) {
         // Method 2: Fallback with keepalive fetch
-        console.log('Beacon failed, using keepalive fetch');
         fetch(url, {
           method: 'POST',
           headers: {
@@ -237,12 +222,12 @@ export class HeyGenService {
           },
           body: payload,
           keepalive: true, // Request continues even if page closes
-        }).catch(err => {
-          console.error('Keepalive fetch error:', err);
+        }).catch(() => {
+          // Silently fail on cleanup
         });
       }
     } catch (error) {
-      console.error('Error in stopSessionSync:', error);
+      // Silently fail on cleanup
     }
   }
 

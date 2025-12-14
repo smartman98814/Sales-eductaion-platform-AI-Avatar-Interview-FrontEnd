@@ -4,15 +4,18 @@
  */
 import { useState, useCallback, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-import { Navbar } from './components/Navbar';
-import { LandingPage } from './components/LandingPage';
-import { Login } from './components/Login';
-import { Signup } from './components/Signup';
-import { Dashboard } from './components/Dashboard';
-import { ProfileSettings } from './components/ProfileSettings';
-import { InterviewView } from './components/InterviewView';
-import { LoadingScreen } from './components/LoadingScreen';
-import { BackendStatus } from './components/BackendStatus';
+import { Navbar } from './components/layout/Navbar';
+import { LoadingScreen } from './components/layout/LoadingScreen';
+import { LandingPage } from './components/layout/LandingPage';
+import { Dashboard } from './components/layout/Dashboard';
+
+import { Login } from './components/user_management/Login';
+import { Signup } from './components/user_management/Signup';
+
+import { ProfileSettings } from './components/user_management/ProfileSettings';
+import { InterviewView } from './components/layout/InterviewView';
+import { BackendStatus } from './components/layout/BackendStatus';
+
 import { livekitService } from './services/LiveKitService';
 import { useStreamingSession } from './hooks/useStreamingSession';
 import { heygenService } from './services/HeyGenService';
@@ -28,9 +31,7 @@ function App() {
   const [livekitRoom, setLivekitRoom] = useState(null);
 
   // Debug: Log view state changes and force reset if stuck
-  useEffect(() => {
-    console.log('🔍 View state changed:', view, 'selectedAvatar:', selectedAvatar?.id, 'livekitRoom:', !!livekitRoom);
-    
+  useEffect(() => { 
     // If stuck in loading/interview for more than 30 seconds, reset to dashboard
     if ((view === 'loading' || view === 'interview') && !livekitRoom) {
       const timeout = setTimeout(() => {
@@ -51,7 +52,6 @@ function App() {
     isConnected: heygenConnected,
     createNewSession,
     startSession,
-    sendTask,
     closeSession,
   } = useStreamingSession();
 
@@ -107,12 +107,10 @@ function App() {
     const handleBeforeUnload = () => {
       // Cleanup HeyGen session
       if (sessionInfo && sessionInfo.session_id) {
-        console.log('Browser closing - cleaning up HeyGen session');
         heygenService.stopSessionSync(sessionInfo.session_id);
       }
       // Cleanup LiveKit room
       if (livekitRoom) {
-        console.log('Browser closing - cleaning up LiveKit room');
         livekitService.disconnect();
       }
     };
@@ -169,26 +167,22 @@ function App() {
       // const roomName = `room-${avatar.id}-${Date.now()}`; // Dynamic (original)
       const participantName = `user-${Date.now()}`;
       
-      // Log room name for agent configuration
-      console.log('🔷 Connecting to LiveKit room:', roomName);
-      console.log('🔷 IMPORTANT: Configure your LiveKit agent to join rooms matching pattern: room-avatar-*');
-      console.log('🔷 Or configure agent to auto-join when participants connect');
+      // Get HeyGen session_id to pass to LiveKit agent
+      const heygenSessionId = sessionInfo?.session_id || null;
       
       // Connect to LiveKit room
       const room = await livekitService.connectToRoom(
         roomName,
         participantName,
         avatar.id,
-        (track, publication, participant) => {
-          console.log('LiveKit track subscribed in App:', track.kind, 'from', participant.identity);
+        heygenSessionId,
+        () => {
           // Track handling is done in InterviewView component
         },
-        (participant) => {
-          console.log('LiveKit participant connected:', participant.identity);
+        () => {
           setLoadingStatus('LiveKit agent connected ✓');
         },
         () => {
-          console.log('Disconnected from LiveKit room');
           setLivekitRoom(null);
         }
       );
@@ -198,29 +192,52 @@ function App() {
       // Agent will auto-join via roomConfig in the token (no manual dispatch needed)
       setLoadingStatus('Waiting for agent to join...');
       
-      setLoadingStatus('All connections ready!');
-      
-      // Wait a brief moment then transition to interview
-      setTimeout(() => {
-        setView('interview');
-      }, 500);
+      // Wait for agent to join (check every second, timeout after 10 seconds)
+      let checkCount = 0;
+      const maxChecks = 10;
+      const agentCheckInterval = setInterval(() => {
+        checkCount++;
+        const agentCount = room.remoteParticipants.size;
+        
+        if (agentCount > 0) {
+          clearInterval(agentCheckInterval);
+          setLoadingStatus('Agent connected ✓');
+          setTimeout(() => {
+            setView('interview');
+          }, 500);
+        } else if (checkCount >= maxChecks) {
+          clearInterval(agentCheckInterval);
+          setLoadingStatus('⚠️ Agent did not join - check LIVEKIT_AGENT_NAME in .env');
+          // Still transition to interview so user can see the issue
+          setTimeout(() => {
+            setView('interview');
+          }, 2000);
+        } else {
+          setLoadingStatus(`Waiting for agent to join... (${checkCount}/${maxChecks})`);
+        }
+      }, 1000);
 
     } catch (error) {
-      console.error('❌ Error creating session:', error);
-      console.error('Error details:', {
-        message: error.message,
-        stack: error.stack,
-        name: error.name
-      });
-      alert(`Failed to create interview session: ${error.message}\n\nCheck browser console (F12) for details.`);
+      // Extract error message properly
+      let errorMessage = 'Unknown error';
+      if (error instanceof Error) {
+        errorMessage = error.message || String(error);
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error && typeof error === 'object') {
+        errorMessage = error.message || error.detail || error.error || JSON.stringify(error);
+      } else {
+        errorMessage = String(error);
+      }
+      
+      alert(`Failed to create interview session: ${errorMessage}`);
       // Reset all state to ensure clean dashboard view
       setView('dashboard');
       setSelectedAvatar(null);
       setLivekitRoom(null);
       setLoadingStatus('Initializing...');
-      console.log('✅ State reset to dashboard');
     }
-  }, [createNewSession, startSession, backendReady]);
+  }, [createNewSession, startSession, backendReady, sessionInfo]);
 
   /**
    * Handle exiting the interview
@@ -232,7 +249,7 @@ function App() {
       // Close HeyGen session
       await closeSession();
     } catch (error) {
-      console.error('Error closing sessions:', error);
+      // Error closing sessions - silently fail
     }
     
     setLivekitRoom(null);
@@ -252,7 +269,7 @@ function App() {
         await closeSession();
       }
     } catch (error) {
-      console.error('Error canceling:', error);
+      // Error canceling - silently fail
     }
     
     setLivekitRoom(null);
@@ -279,40 +296,6 @@ function App() {
         onStatusChange={handleBackendStatusChange} 
         isAuthenticated={isAuthenticated}
       />
-
-      {/* Debug Panel - Remove in production */}
-      {process.env.NODE_ENV === 'development' && (
-        <div style={{
-          position: 'fixed',
-          top: '10px',
-          right: '10px',
-          background: 'rgba(0,0,0,0.8)',
-          color: 'white',
-          padding: '10px',
-          fontSize: '12px',
-          zIndex: 9999,
-          borderRadius: '4px',
-          fontFamily: 'monospace'
-        }}>
-          <div>View: <strong>{view}</strong></div>
-          <div>Auth: {isAuthenticated ? '✅' : '❌'}</div>
-          <div>Backend: {backendReady ? '✅' : '❌'}</div>
-          <div>Avatar: {selectedAvatar ? selectedAvatar.id : 'none'}</div>
-          <div>LiveKit: {livekitRoom ? '✅' : '❌'}</div>
-          <button 
-            onClick={() => {
-              setView('dashboard');
-              setSelectedAvatar(null);
-              setLivekitRoom(null);
-              console.log('🔄 Manual reset to dashboard');
-            }}
-            style={{ marginTop: '5px', padding: '5px', cursor: 'pointer' }}
-          >
-            Reset to Dashboard
-          </button>
-        </div>
-      )}
-
       <Routes>
         {/* Public Routes */}
         <Route path="/" element={<LandingPage />} />
@@ -380,7 +363,7 @@ function App() {
               peerConnection={peerConnection || null}
               isConnected={heygenConnected}
               livekitRoom={livekitRoom}
-              sendTaskToHeyGen={sendTask}
+              heygenSessionId={sessionInfo?.session_id || null}
               onExit={handleExitInterview}
             />
           )}

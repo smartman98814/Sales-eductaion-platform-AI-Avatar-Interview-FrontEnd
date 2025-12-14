@@ -28,31 +28,74 @@ export class LiveKitService {
    * @param {string} roomName - Name of the room
    * @param {string} participantName - Name of the participant
    * @param {number} agentId - Agent ID (1-10)
+   * @param {string} heygenSessionId - HeyGen session ID (optional)
    * @returns {Promise<Object>} Token and connection info
    */
-  async createRoomToken(roomName, participantName, agentId) {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/livekit/token`, {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify({
-          room_name: roomName,
-          participant_name: participantName,
-          agent_id: agentId,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMsg = errorData.detail || errorData.message || `HTTP ${response.status}`;
-        throw new Error(`Failed to create room token: ${errorMsg}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error creating room token:', error);
-      throw error;
+  async createRoomToken(roomName, participantName, agentId, heygenSessionId = null) {
+    // Build request body, only including fields that have values
+    const requestBody = {
+      room_name: roomName,
+      participant_name: participantName,
+    };
+    
+    // Only include optional fields if they have values
+    if (agentId != null && agentId !== undefined) {
+      requestBody.agent_id = agentId;
     }
+    if (heygenSessionId != null && heygenSessionId !== undefined && heygenSessionId !== '') {
+      requestBody.heygen_session_id = heygenSessionId;
+    }
+    
+    const response = await fetch(`${this.baseUrl}/api/livekit/token`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      let errorMsg = `HTTP ${response.status}`;
+      try {
+        const errorData = await response.json();
+        
+        // FastAPI validation errors (422) return detail as an array
+        if (errorData.detail) {
+          if (Array.isArray(errorData.detail)) {
+            // Format validation errors: "field: error message"
+            errorMsg = errorData.detail
+              .map(err => {
+                const field = err.loc ? err.loc.slice(1).join('.') : 'unknown';
+                return `${field}: ${err.msg || err.message || 'validation error'}`;
+              })
+              .join('; ');
+          } else if (typeof errorData.detail === 'string') {
+            errorMsg = errorData.detail;
+          } else {
+            errorMsg = JSON.stringify(errorData.detail);
+          }
+        } else if (errorData.message) {
+          errorMsg = typeof errorData.message === 'string' 
+            ? errorData.message 
+            : JSON.stringify(errorData.message);
+        } else if (errorData.error) {
+          errorMsg = typeof errorData.error === 'string'
+            ? errorData.error
+            : JSON.stringify(errorData.error);
+        } else {
+          errorMsg = JSON.stringify(errorData);
+        }
+      } catch (e) {
+        // If JSON parsing fails, try to get text response
+        try {
+          const text = await response.text();
+          errorMsg = text || `HTTP ${response.status}: ${response.statusText}`;
+        } catch (textError) {
+          errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+        }
+      }
+      throw new Error(`Failed to create room token: ${errorMsg}`);
+    }
+
+    return await response.json();
   }
 
   /**
@@ -60,6 +103,7 @@ export class LiveKitService {
    * @param {string} roomName - Name of the room
    * @param {string} participantName - Name of the participant
    * @param {number} agentId - Agent ID (1-10)
+   * @param {string} heygenSessionId - HeyGen session ID (optional)
    * @param {Function} onTrackSubscribed - Callback when track is subscribed
    * @param {Function} onParticipantConnected - Callback when participant connects
    * @param {Function} onDisconnected - Callback when disconnected
@@ -69,56 +113,51 @@ export class LiveKitService {
     roomName,
     participantName,
     agentId,
+    heygenSessionId = null,
     onTrackSubscribed,
     onParticipantConnected,
     onDisconnected
   ) {
-    try {
-      // Get room token
-      const tokenData = await this.createRoomToken(roomName, participantName, agentId);
+    // Get room token
+    const tokenData = await this.createRoomToken(roomName, participantName, agentId, heygenSessionId);
 
-      // Create room
-      const room = new Room({
-        adaptiveStream: true,
-        dynacast: true,
-      });
+    // Create room
+    const room = new Room({
+      adaptiveStream: true,
+      dynacast: true,
+    });
 
-      // Set up event handlers
-      room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-        if (onTrackSubscribed) {
-          onTrackSubscribed(track, publication, participant);
-        }
-      });
-
-      room.on(RoomEvent.ParticipantConnected, (participant) => {
-        if (onParticipantConnected) {
-          onParticipantConnected(participant);
-        }
-      });
-
-      room.on(RoomEvent.Disconnected, () => {
-        if (onDisconnected) {
-          onDisconnected();
-        }
-      });
-
-      // Connect to room
-      await room.connect(tokenData.url, tokenData.token);
-      
-      // Enable microphone by default (like the working implementation)
-      try {
-        await room.localParticipant.setMicrophoneEnabled(true);
-      } catch (error) {
-        console.warn('Failed to enable microphone:', error);
-        // Don't fail the connection if microphone fails
+    // Set up event handlers
+    room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+      if (onTrackSubscribed) {
+        onTrackSubscribed(track, publication, participant);
       }
+    });
 
-      this.currentRoom = room;
-      return room;
+    room.on(RoomEvent.ParticipantConnected, (participant) => {
+      if (onParticipantConnected) {
+        onParticipantConnected(participant);
+      }
+    });
+
+    room.on(RoomEvent.Disconnected, () => {
+      if (onDisconnected) {
+        onDisconnected();
+      }
+    });
+
+    // Connect to room
+    await room.connect(tokenData.url, tokenData.token);
+    
+    // Enable microphone by default (like the working implementation)
+    try {
+      await room.localParticipant.setMicrophoneEnabled(true);
     } catch (error) {
-      console.error('Error connecting to LiveKit room:', error);
-      throw error;
+      // Don't fail the connection if microphone fails
     }
+
+    this.currentRoom = room;
+    return room;
   }
 
   /**

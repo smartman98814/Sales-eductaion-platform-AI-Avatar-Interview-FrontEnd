@@ -33,7 +33,6 @@ export function useWebcam() {
         videoRef.current.srcObject = mediaStream;
       }
     } catch (err) {
-      console.error('Error accessing webcam:', err);
       setError(err.message || 'Failed to access webcam');
       setIsActive(false);
     }

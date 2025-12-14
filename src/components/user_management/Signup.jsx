@@ -4,8 +4,8 @@
  */
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { authService } from '../services/AuthService';
-import '../styles/auth.css';
+import { authService } from '../../services/AuthService';
+import '../../styles/auth.css';
 
 export function Signup({ onSuccess, onSwitchToLogin }) {
   const navigate = useNavigate();
@@ -21,6 +21,16 @@ export function Signup({ onSuccess, onSwitchToLogin }) {
     setError('');
 
     // Validation
+    if (username.trim().length < 3) {
+      setError('Username must be at least 3 characters long');
+      return;
+    }
+
+    if (username.trim().length > 50) {
+      setError('Username must be at most 50 characters long');
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError('Passwords do not match');
       return;
@@ -41,7 +51,16 @@ export function Signup({ onSuccess, onSwitchToLogin }) {
         navigate('/dashboard');
       }
     } catch (err) {
-      setError(err.message || 'Failed to sign up. Please try again.');
+      // Handle error object properly - extract message or convert to string
+      let errorMessage = 'Failed to sign up. Please try again.';
+      if (err instanceof Error) {
+        errorMessage = err.message || errorMessage;
+      } else if (typeof err === 'string') {
+        errorMessage = err;
+      } else if (err && typeof err === 'object') {
+        errorMessage = err.message || err.detail || JSON.stringify(err);
+      }
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

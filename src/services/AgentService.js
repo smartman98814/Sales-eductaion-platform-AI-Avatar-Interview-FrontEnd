@@ -36,7 +36,6 @@ export class AgentService {
       }
       return await response.json();
     } catch (error) {
-      console.error('Error checking backend health:', error);
       throw new Error(`Cannot connect to backend at ${this.baseUrl}`);
     }
   }

@@ -3,9 +3,9 @@
  * Shows login/signup forms on the home page
  */
 import { useState, useEffect } from 'react';
-import { Login } from './Login';
-import { Signup } from './Signup';
-import { authService } from '../services/AuthService';
+import { Login } from '../user_management/Login';
+import { Signup } from '../user_management/Signup';
+import { authService } from '../../services/AuthService';
 
 export function HomePage({ onAuthenticated }) {
   const [showSignup, setShowSignup] = useState(false);

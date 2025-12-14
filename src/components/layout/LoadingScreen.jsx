@@ -2,7 +2,7 @@
  * Loading Screen Component
  * Displays while HeyGen session is being created
  */
-import '../styles/loadingScreen.css';
+import '../../styles/loadingScreen.css';
 
 export function LoadingScreen({ avatar, status, onCancel }) {
   return (

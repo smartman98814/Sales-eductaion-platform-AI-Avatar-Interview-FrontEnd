@@ -3,15 +3,15 @@
  * Shows backend connection status (for LiveKit token generation)
  * Note: LiveKit agents run separately, so we only check backend connectivity
  */
-import { useState, useEffect } from 'react';
-import { agentService } from '../services/AgentService';
-import '../styles/backendStatus.css';
+import { useState, useEffect, useCallback } from 'react';
+import { agentService } from '../../services/AgentService';
+import '../../styles/backendStatus.css';
 
 export function BackendStatus({ onStatusChange, isAuthenticated }) {
   const [status, setStatus] = useState('idle'); // 'idle', 'checking', 'connected', 'error'
   const [error, setError] = useState(null);
 
-  const checkBackendStatus = async () => {
+  const checkBackendStatus = useCallback(async () => {
     try {
       setStatus('checking');
       setError(null);
@@ -23,12 +23,11 @@ export function BackendStatus({ onStatusChange, isAuthenticated }) {
       // LiveKit agents run separately, so we always mark as ready if backend is connected
       onStatusChange?.({ connected: true, agentsReady: true });
     } catch (err) {
-      console.error('Backend check failed:', err);
       setError(err.message);
       setStatus('error');
       onStatusChange?.({ connected: false, agentsReady: false });
     }
-  };
+  }, [onStatusChange]);
 
   useEffect(() => {
     // Only check backend status when user is authenticated
@@ -40,10 +39,8 @@ export function BackendStatus({ onStatusChange, isAuthenticated }) {
       setError(null);
       onStatusChange?.({ connected: false, agentsReady: false });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
+  }, [isAuthenticated, checkBackendStatus, onStatusChange]);
 
-  // Don't show anything if not authenticated
   if (!isAuthenticated) {
     return null;
   }
