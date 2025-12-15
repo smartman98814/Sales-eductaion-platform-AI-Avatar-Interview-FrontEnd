@@ -15,6 +15,7 @@ import { Signup } from './components/user_management/Signup';
 import { ProfileSettings } from './components/user_management/ProfileSettings';
 import { InterviewView } from './components/layout/InterviewView';
 import { BackendStatus } from './components/layout/BackendStatus';
+import { AdminPanel } from './components/admin/AdminPanel';
 
 import { livekitService } from './services/LiveKitService';
 import { useStreamingSession } from './hooks/useStreamingSession';
@@ -339,6 +340,16 @@ function App() {
                 onAvatarSelect={handleAvatarSelect}
                 backendReady={backendReady}
               />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            isAuthenticated ? (
+              <AdminPanel />
             ) : (
               <Navigate to="/" replace />
             )

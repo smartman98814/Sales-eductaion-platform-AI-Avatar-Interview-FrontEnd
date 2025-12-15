@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWebcam } from '../../hooks/useWebcam';
 import { livekitService } from '../../services/LiveKitService';
 import { heygenService } from '../../services/HeyGenService';
+import { authService } from '../../services/AuthService';
+import { config } from '../../config';
 import { RoomEvent } from 'livekit-client';
 import { RoomContext, useVoiceAssistant } from '@livekit/components-react';
 import '../../styles/interviewView.css';
@@ -51,6 +53,10 @@ export function InterviewView({
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [showCompleteMessageModal, setShowCompleteMessageModal] = useState(false);
+  const [showScoreModal, setShowScoreModal] = useState(false);
+  const [interviewScore, setInterviewScore] = useState(null);
+  const [isCalculatingScore, setIsCalculatingScore] = useState(false);
+  const [interviewStartTime] = useState(new Date());
   // const [completeMessage, setCompleteMessage] = useState('');
 
   // Track accumulated text and sent word count for incremental phrase sending
@@ -154,15 +160,16 @@ export function InterviewView({
       if (track.kind === 'audio' && isAgent && livekitAudioRef.current) {
         const audioElement = livekitAudioRef.current;
         
-        // Mark audio as active when track is subscribed
+        // Mute LiveKit audio - we'll use HeyGen audio instead
+        audioElement.muted = true;
+        audioElement.volume = 0;
+        
+        // Mark audio as active when track is subscribed (for triggering HeyGen text sends)
         liveKitAudioActiveRef.current = true;
-        console.log('🔄 LiveKit audio track subscribed - enabling HeyGen sends');
+        console.log('🔄 LiveKit audio detected (muted) - enabling HeyGen sends');
         
-        // Attach track to audio element
-        const mediaStream = new MediaStream([track.mediaStreamTrack]);
-        audioElement.srcObject = mediaStream;
-        
-        // Listen for when the track ends (more reliable than audio element ended event)
+        // Don't attach track to audio element - we're using HeyGen audio
+        // Still listen for track events to detect when audio ends
         const handleTrackEnded = () => {
           liveKitAudioActiveRef.current = false;
           console.log('⏸️ LiveKit audio track ended - stopping HeyGen sends');
@@ -171,22 +178,8 @@ export function InterviewView({
         
         track.on('ended', handleTrackEnded);
         
-        // Also listen for when audio element ends (backup detection)
-        const handleAudioEnded = () => {
-          liveKitAudioActiveRef.current = false;
-          console.log('⏸️ LiveKit audio element ended - stopping HeyGen sends');
-          updateStatus('⏸️ Audio ended');
-        };
-        
-        audioElement.addEventListener('ended', handleAudioEnded);
-        
-        audioElement.play().catch(error => {
-          console.error('Failed to play LiveKit audio:', error);
-          updateStatus('⚠️ LiveKit audio playback failed - may need user interaction');
-        });
-        
-        updateStatus('LiveKit audio connected ✓');
-        console.log('✅ LiveKit audio track attached from', participant?.identity);
+        updateStatus('LiveKit audio detected (using HeyGen audio) ✓');
+        console.log('✅ LiveKit audio track detected (muted) from', participant?.identity);
       }
     };
     
@@ -209,10 +202,12 @@ export function InterviewView({
         participant.audioTrackPublications.forEach(publication => {
           if (publication.track && publication.isSubscribed && livekitAudioRef.current) {
             const audioElement = livekitAudioRef.current;
-            const mediaStream = new MediaStream([publication.track.mediaStreamTrack]);
-            audioElement.srcObject = mediaStream;
             
-            // Mark audio as active for existing track
+            // Mute LiveKit audio - we'll use HeyGen audio instead
+            audioElement.muted = true;
+            audioElement.volume = 0;
+            
+            // Mark audio as active for existing track (for triggering HeyGen text sends)
             liveKitAudioActiveRef.current = true;
             
             // Listen for track ended
@@ -224,20 +219,8 @@ export function InterviewView({
             
             publication.track.on('ended', handleTrackEnded);
             
-            // Listen for audio element ended
-            const handleAudioEnded = () => {
-              liveKitAudioActiveRef.current = false;
-              console.log('⏸️ LiveKit audio element ended - stopping HeyGen sends');
-              updateStatus('⏸️ Audio ended');
-            };
-            
-            audioElement.addEventListener('ended', handleAudioEnded);
-            
-            audioElement.play().catch(error => {
-              console.error('Failed to play existing LiveKit audio:', error);
-            });
-            updateStatus('LiveKit audio connected ✓');
-            console.log('✅ Existing LiveKit audio track attached from', participant?.identity);
+            updateStatus('LiveKit audio detected (using HeyGen audio) ✓');
+            console.log('✅ Existing LiveKit audio track detected (muted) from', participant?.identity);
           }
         });
       }
@@ -272,7 +255,7 @@ export function InterviewView({
   }, []);
 
   /**
-   * Setup HeyGen video connection (video only, audio muted - using LiveKit audio instead)
+   * Setup HeyGen video and audio connection (using HeyGen audio, LiveKit audio muted)
    */
   useEffect(() => {
     if (!peerConnection) {
@@ -285,27 +268,35 @@ export function InterviewView({
     }
     
     const videoElement = avatarVideoRef.current;
-    // Mute HeyGen audio - we'll use LiveKit audio instead
-    videoElement.muted = true;
-    videoElement.volume = 0;
+    // Enable HeyGen audio - we're using HeyGen audio instead of LiveKit audio
+    videoElement.muted = false;
+    videoElement.volume = 1.0;
     
-    // Check for existing VIDEO tracks only (HeyGen element is video-only)
+    // Check for existing VIDEO and AUDIO tracks
     const checkExistingTracks = () => {
       try {
         const receivers = peerConnection.getReceivers();
         const videoTracks = [];
+        const audioTracks = [];
         
         for (const receiver of receivers) {
           if(receiver.track && receiver.track.kind === 'video') {
             videoTracks.push(receiver.track);
           }
-          // Ignore audio tracks - we'll use LiveKit audio
+          // Handle audio tracks - we're using HeyGen audio
+          if(receiver.track && receiver.track.kind === 'audio') {
+            audioTracks.push(receiver.track);
+          }
         }
         
         if (videoTracks.length > 0) {
-          const stream = new MediaStream(videoTracks);
+          const stream = new MediaStream([...videoTracks, ...audioTracks]);
           videoElement.srcObject = stream;
-        updateStatus('HeyGen video connected ✓');
+          if (audioTracks.length > 0) {
+            updateStatus('HeyGen video + audio connected ✓');
+          } else {
+            updateStatus('HeyGen video connected ✓');
+          }
           videoElement.play().catch(() => {});
         return true;
         }
@@ -319,20 +310,30 @@ export function InterviewView({
     
     // Set up event handler for future tracks
     peerConnection.ontrack = (event) => {
-      if (event.track && event.track.kind === 'video') {
+      if (event.track) {
         let stream = videoElement.srcObject;
         if (!stream) {
           stream = new MediaStream();
           videoElement.srcObject = stream;
         }
         
-        // Remove existing video tracks and add new one
-        stream.getVideoTracks().forEach(t => stream.removeTrack(t));
-        stream.addTrack(event.track);
-      updateStatus('HeyGen video track connected ✓');
+        if (event.track.kind === 'video') {
+          // Remove existing video tracks and add new one
+          stream.getVideoTracks().forEach(t => stream.removeTrack(t));
+          stream.addTrack(event.track);
+          updateStatus('HeyGen video track connected ✓');
+        }
+        
+        // Handle audio tracks - we're using HeyGen audio
+        if (event.track.kind === 'audio') {
+          // Remove existing audio tracks and add new one
+          stream.getAudioTracks().forEach(t => stream.removeTrack(t));
+          stream.addTrack(event.track);
+          updateStatus('HeyGen audio track connected ✓');
+        }
+        
         videoElement.play().catch(() => {});
       }
-      // Ignore audio tracks - we'll use LiveKit audio
     };
 
     if (!hasExistingTrack) {
@@ -464,28 +465,182 @@ export function InterviewView({
   }, [conversationStarted, roomRef, updateStatus]);
 
   /**
+   * Perform cleanup operations (disconnect, delete room, etc.)
+   */
+  const performCleanup = async () => {
+    // Get room name before disconnecting
+    const roomName = roomRef.current?.name || null;
+    
+    // Disconnect from LiveKit room
+    if (roomRef.current) {
+      await livekitService.disconnect();
+    }
+    
+    // Delete the LiveKit room to ensure it's closed immediately
+    if (roomName) {
+      try {
+        // URL encode room name for safe path parameter
+        const encodedRoomName = encodeURIComponent(roomName);
+        const response = await fetch(`${config.backend.baseUrl}/api/livekit/room/${encodedRoomName}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            ...authService.getAuthHeader(),
+          },
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          console.log('Room deleted:', result);
+          updateStatus('Room closed ✓');
+        } else {
+          console.warn('Failed to delete room (non-critical):', response.status);
+        }
+      } catch (error) {
+        console.error('Error deleting room (non-critical):', error);
+        // Don't block exit if room deletion fails
+      }
+    }
+    
+    // Stop webcam (if available)
+    if (typeof stopWebcam === 'function') {
+      stopWebcam();
+    }
+    
+    // Call parent's exit handler to close HeyGen session and reset state
+    onExit();
+  };
+
+  /**
+   * Handle closing score modal and complete exit
+   */
+  const handleCloseScoreModal = async () => {
+    setShowScoreModal(false);
+    setInterviewScore(null);
+    await performCleanup();
+  };
+
+  /**
    * Handle exit interview
    */
   const handleExit = async () => {
     try {
       updateStatus('Ending interview...');
       
-      // Disconnect from LiveKit room
-      if (roomRef.current) {
-        await livekitService.disconnect();
+      // Calculate interview score before cleanup (only if there are messages)
+      if (chatMessages.length > 0 && !isCalculatingScore) {
+        setIsCalculatingScore(true);
+        updateStatus('Calculating interview score...');
+        
+        try {
+          // Step 1: Calculate score
+          const scoreResponse = await fetch(`${config.backend.baseUrl}/api/interviews/score`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...authService.getAuthHeader(),
+            },
+            body: JSON.stringify({
+              agent_id: avatar.id,
+              agent_name: avatar.name,
+              agent_role: avatar.role,
+              messages: chatMessages.map(msg => ({
+                text: msg.text,
+                sender: msg.sender,
+                timestamp: msg.timestamp,
+                timestamp_ms: msg.timestampMs
+              }))
+            })
+          });
+          
+          if (scoreResponse.ok) {
+            const scoreData = await scoreResponse.json();
+            setInterviewScore(scoreData);
+            setShowScoreModal(true);
+            updateStatus('Score calculated ✓');
+            
+            // Step 2: Save conversation to database
+            try {
+              const saveResponse = await fetch(`${config.backend.baseUrl}/api/conversations`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...authService.getAuthHeader(),
+                },
+                body: JSON.stringify({
+                  conversation: {
+                    agent_id: avatar.id,
+                    agent_name: avatar.name,
+                    agent_role: avatar.role,
+                    room_name: roomRef.current?.name || null,
+                    started_at: interviewStartTime.toISOString(),
+                    messages: chatMessages.map(msg => ({
+                      text: msg.text,
+                      sender: msg.sender,
+                      timestamp_ms: msg.timestampMs,
+                      participant_id: msg.participantId
+                    }))
+                  },
+                  score_data: {
+                    final_score: scoreData.final_score,
+                    tier: scoreData.tier,
+                    pre_deduction_total: scoreData.pre_deduction_total,
+                    raw_scores: {
+                      opening_rapport: scoreData.raw_scores.opening_rapport,
+                      discovery_qualification: scoreData.raw_scores.discovery_qualification,
+                      value_messaging: scoreData.raw_scores.value_messaging,
+                      objection_handling: scoreData.raw_scores.objection_handling,
+                      trial_advancement: scoreData.raw_scores.trial_advancement,
+                      listening_adaptability: scoreData.raw_scores.listening_adaptability,
+                      professionalism: scoreData.raw_scores.professionalism
+                    },
+                    weighted_points: {
+                      opening_rapport: scoreData.weighted_points.opening_rapport,
+                      discovery_qualification: scoreData.weighted_points.discovery_qualification,
+                      value_messaging: scoreData.weighted_points.value_messaging,
+                      objection_handling: scoreData.weighted_points.objection_handling,
+                      trial_advancement: scoreData.weighted_points.trial_advancement,
+                      listening_adaptability: scoreData.weighted_points.listening_adaptability,
+                      professionalism: scoreData.weighted_points.professionalism
+                    },
+                    deductions: scoreData.deductions,
+                    strengths: scoreData.strengths,
+                    coaching_items: scoreData.coaching_items,
+                    detailed_feedback: scoreData.detailed_feedback
+                  }
+                })
+              });
+              
+              if (saveResponse.ok) {
+                console.log('✅ Conversation saved to database');
+              } else {
+                console.error('Failed to save conversation:', await saveResponse.text());
+              }
+            } catch (saveError) {
+              console.error('Error saving conversation:', saveError);
+              // Don't block exit if save fails
+            }
+            
+            setIsCalculatingScore(false);
+            return; // Exit early - cleanup happens when modal closes
+          } else {
+            const errorData = await scoreResponse.json().catch(() => ({}));
+            console.error('Failed to calculate score:', errorData);
+            updateStatus('Score calculation failed - continuing with exit');
+          }
+        } catch (error) {
+          console.error('Error calculating score:', error);
+          updateStatus('Score calculation error - continuing with exit');
+        } finally {
+          setIsCalculatingScore(false);
+        }
       }
       
-      // Stop webcam (if available)
-      if (typeof stopWebcam === 'function') {
-      stopWebcam();
-      }
-      
-      // Call parent's exit handler to close HeyGen session and reset state
-      onExit();
+      // If no messages or scoring failed, proceed with normal cleanup
+      await performCleanup();
     } catch (error) {
       console.error('Error during exit:', error);
-      // Still call onExit to ensure cleanup happens
-      onExit();
+      await performCleanup();
     }
   };
 
@@ -742,9 +897,606 @@ export function InterviewView({
     );
   };
 
+  /**
+   * Interview Score Modal Component
+   * Displays detailed scoring results in a comprehensive modal
+   */
+  const ScoreModal = () => {
+    if (!showScoreModal || !interviewScore) return null;
+    
+    const { 
+      raw_scores, 
+      weighted_points, 
+      pre_deduction_total, 
+      deductions,
+      final_score,
+      tier,
+      strengths,
+      coaching_items,
+      detailed_feedback
+    } = interviewScore;
+    
+    // Calculate color based on score tier
+    const getTierColor = () => {
+      if (tier === "Excellent") return '#4ade80'; // Green
+      if (tier === "Strong") return '#60a5fa'; // Blue
+      if (tier === "Developing") return '#fbbf24'; // Yellow
+      return '#f87171'; // Red
+    };
+    
+    const tierColor = getTierColor();
+    
+    // Category labels and weights
+    const categories = [
+      { 
+        key: 'opening_rapport', 
+        label: 'Opening & Rapport', 
+        weight: '10%',
+        max: 10,
+        color: '#3b82f6'
+      },
+      { 
+        key: 'discovery_qualification', 
+        label: 'Discovery & Qualification', 
+        weight: '20%',
+        max: 20,
+        color: '#8b5cf6'
+      },
+      { 
+        key: 'value_messaging', 
+        label: 'Value Messaging & Positioning', 
+        weight: '20%',
+        max: 20,
+        color: '#ec4899'
+      },
+      { 
+        key: 'objection_handling', 
+        label: 'Objection Handling', 
+        weight: '20%',
+        max: 20,
+        color: '#f59e0b'
+      },
+      { 
+        key: 'trial_advancement', 
+        label: 'Trial Advancement & Closing', 
+        weight: '15%',
+        max: 15,
+        color: '#10b981'
+      },
+      { 
+        key: 'listening_adaptability', 
+        label: 'Listening, Adaptability & Flow', 
+        weight: '10%',
+        max: 10,
+        color: '#06b6d4'
+      },
+      { 
+        key: 'professionalism', 
+        label: 'Professionalism & Brand', 
+        weight: '5%',
+        max: 5,
+        color: '#6366f1'
+      }
+    ];
+    
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 20000,
+          padding: '20px',
+          overflow: 'auto'
+        }}
+        onClick={handleCloseScoreModal}
+      >
+        <div
+          style={{
+            backgroundColor: '#1e293b',
+            borderRadius: '20px',
+            padding: '40px',
+            maxWidth: '900px',
+            width: '100%',
+            maxHeight: '95vh',
+            overflow: 'auto',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.75)',
+            border: `3px solid ${tierColor}`
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            marginBottom: '32px',
+            borderBottom: '2px solid #334155',
+            paddingBottom: '20px'
+          }}>
+            <div>
+              <h2 style={{ 
+                margin: 0, 
+                color: '#f1f5f9', 
+                fontSize: '28px', 
+                fontWeight: '700',
+                marginBottom: '8px'
+              }}>
+                📊 Interview Performance Score
+              </h2>
+              <p style={{ 
+                margin: 0, 
+                color: '#94a3b8', 
+                fontSize: '14px' 
+              }}>
+                Sales Performance Evaluation
+              </p>
+            </div>
+            <button
+              onClick={handleCloseScoreModal}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#94a3b8',
+                fontSize: '32px',
+                cursor: 'pointer',
+                padding: '8px 16px',
+                borderRadius: '8px',
+                lineHeight: '1',
+                transition: 'all 0.2s'
+              }}
+              onMouseOver={(e) => {
+                e.target.style.backgroundColor = '#334155';
+                e.target.style.color = '#f1f5f9';
+              }}
+              onMouseOut={(e) => {
+                e.target.style.backgroundColor = 'transparent';
+                e.target.style.color = '#94a3b8';
+              }}
+              title="Close"
+            >
+              ×
+            </button>
+          </div>
+          
+          {/* Overall Score Card */}
+          <div style={{
+            textAlign: 'center',
+            marginBottom: '40px',
+            padding: '32px',
+            backgroundColor: '#0f172a',
+            borderRadius: '16px',
+            border: `4px solid ${tierColor}`
+          }}>
+            <div style={{ 
+              fontSize: '16px', 
+              color: '#94a3b8', 
+              marginBottom: '12px',
+              textTransform: 'uppercase',
+              letterSpacing: '1px'
+            }}>
+              Final Score
+            </div>
+            <div style={{
+              fontSize: '96px',
+              fontWeight: '800',
+              color: tierColor,
+              lineHeight: '1',
+              marginBottom: '8px'
+            }}>
+              {Math.round(final_score)}
+            </div>
+            <div style={{ 
+              fontSize: '36px', 
+              color: '#64748b',
+              marginBottom: '16px'
+            }}>
+              / 100
+            </div>
+            <div style={{
+              fontSize: '24px',
+              fontWeight: '600',
+              color: tierColor,
+              padding: '12px 24px',
+              backgroundColor: `${tierColor}20`,
+              borderRadius: '8px',
+              display: 'inline-block'
+            }}>
+              {tier}
+            </div>
+            {tier === "Excellent" && (
+              <div style={{ color: '#4ade80', marginTop: '12px', fontSize: '14px' }}>
+                ✅ Ready for live selling
+              </div>
+            )}
+            {tier === "Strong" && (
+              <div style={{ color: '#60a5fa', marginTop: '12px', fontSize: '14px' }}>
+                💪 Continue refinement
+              </div>
+            )}
+            {tier === "Developing" && (
+              <div style={{ color: '#fbbf24', marginTop: '12px', fontSize: '14px' }}>
+                📈 Coaching recommended
+              </div>
+            )}
+            {tier === "Not ready" && (
+              <div style={{ color: '#f87171', marginTop: '12px', fontSize: '14px' }}>
+                ⚠️ Repeat simulator sessions
+              </div>
+            )}
+          </div>
+          
+          {/* Score Breakdown */}
+          <div style={{ marginBottom: '32px' }}>
+            <h3 style={{ 
+              color: '#f1f5f9', 
+              marginBottom: '24px', 
+              fontSize: '20px',
+              fontWeight: '600',
+              borderBottom: '2px solid #334155',
+              paddingBottom: '12px'
+            }}>
+              📋 Detailed Score Breakdown
+            </h3>
+            
+            {categories.map((category) => {
+              const rawScore = raw_scores[category.key];
+              const weightedPoint = weighted_points[category.key];
+              const percentage = (weightedPoint / category.max * 100).toFixed(1);
+              
+              return (
+                <div 
+                  key={category.key} 
+                  style={{ 
+                    marginBottom: '24px',
+                    padding: '20px',
+                    backgroundColor: '#0f172a',
+                    borderRadius: '12px',
+                    border: '1px solid #334155'
+                  }}
+                >
+                  <div style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center',
+                    marginBottom: '12px'
+                  }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ 
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        marginBottom: '4px'
+                      }}>
+                        <span style={{ 
+                          color: '#f1f5f9', 
+                          fontSize: '16px', 
+                          fontWeight: '600'
+                        }}>
+                          {category.label}
+                        </span>
+                        <span style={{ 
+                          color: '#64748b', 
+                          fontSize: '12px',
+                          backgroundColor: '#1e293b',
+                          padding: '2px 8px',
+                          borderRadius: '4px'
+                        }}>
+                          {category.weight}
+                        </span>
+                      </div>
+                      <div style={{
+                        display: 'flex',
+                        gap: '16px',
+                        alignItems: 'center',
+                        marginTop: '8px'
+                      }}>
+                        <div>
+                          <span style={{ color: '#94a3b8', fontSize: '12px' }}>Raw Score: </span>
+                          <span style={{ 
+                            color: category.color, 
+                            fontWeight: '700',
+                            fontSize: '18px'
+                          }}>
+                            {rawScore}/5
+                          </span>
+                        </div>
+                        <div>
+                          <span style={{ color: '#94a3b8', fontSize: '12px' }}>Weighted: </span>
+                          <span style={{ 
+                            color: '#f1f5f9', 
+                            fontWeight: '700',
+                            fontSize: '18px'
+                          }}>
+                            {weightedPoint}/{category.max} points
+                          </span>
+                        </div>
+                        <div>
+                          <span style={{ color: '#94a3b8', fontSize: '12px' }}>Percentage: </span>
+                          <span style={{ 
+                            color: '#cbd5e1', 
+                            fontWeight: '600'
+                          }}>
+                            {percentage}%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Progress Bar */}
+                  <div style={{
+                    height: '12px',
+                    backgroundColor: '#334155',
+                    borderRadius: '6px',
+                    overflow: 'hidden',
+                    marginTop: '12px'
+                  }}>
+                    <div style={{
+                      height: '100%',
+                      width: `${percentage}%`,
+                      backgroundColor: category.color,
+                      transition: 'width 0.5s ease',
+                      borderRadius: '6px'
+                    }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          
+          {/* Pre-Deduction Total */}
+          <div style={{
+            marginBottom: '24px',
+            padding: '16px 20px',
+            backgroundColor: '#0f172a',
+            borderRadius: '12px',
+            border: '1px solid #334155',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <span style={{ color: '#cbd5e1', fontSize: '16px', fontWeight: '600' }}>
+              Pre-Deduction Total:
+            </span>
+            <span style={{ 
+              color: '#f1f5f9', 
+              fontSize: '20px', 
+              fontWeight: '700'
+            }}>
+              {pre_deduction_total.toFixed(1)} / 100
+            </span>
+          </div>
+          
+          {/* Deductions */}
+          {deductions && deductions.length > 0 && (
+            <div style={{ marginBottom: '32px' }}>
+              <h3 style={{ 
+                color: '#f87171', 
+                marginBottom: '16px', 
+                fontSize: '20px',
+                fontWeight: '600',
+                borderBottom: '2px solid #334155',
+                paddingBottom: '12px'
+              }}>
+                ⚠️ Deductions Applied
+              </h3>
+              {deductions.map((deduction, idx) => (
+                <div 
+                  key={idx}
+                  style={{
+                    padding: '16px',
+                    backgroundColor: '#7f1d1d20',
+                    borderRadius: '8px',
+                    marginBottom: '12px',
+                    borderLeft: '4px solid #f87171',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}
+                >
+                  <span style={{ color: '#fca5a5', fontSize: '14px', flex: 1 }}>
+                    {deduction.reason}
+                  </span>
+                  <span style={{ 
+                    color: '#f87171', 
+                    fontSize: '18px', 
+                    fontWeight: '700',
+                    marginLeft: '16px'
+                  }}>
+                    {deduction.points} points
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* Detailed Feedback */}
+          {detailed_feedback && (
+            <div style={{ marginBottom: '32px' }}>
+              <h3 style={{ 
+                color: '#f1f5f9', 
+                marginBottom: '16px', 
+                fontSize: '20px',
+                fontWeight: '600',
+                borderBottom: '2px solid #334155',
+                paddingBottom: '12px'
+              }}>
+                💬 Detailed Feedback
+              </h3>
+              <div style={{
+                padding: '20px',
+                backgroundColor: '#0f172a',
+                borderRadius: '12px',
+                border: '1px solid #334155'
+              }}>
+                <p style={{ 
+                  color: '#cbd5e1', 
+                  lineHeight: '1.8', 
+                  fontSize: '15px',
+                  margin: 0
+                }}>
+                  {detailed_feedback}
+                </p>
+              </div>
+            </div>
+          )}
+          
+          {/* Strengths */}
+          {strengths && strengths.length > 0 && (
+            <div style={{ marginBottom: '32px' }}>
+              <h3 style={{ 
+                color: '#4ade80', 
+                marginBottom: '16px', 
+                fontSize: '20px',
+                fontWeight: '600',
+                borderBottom: '2px solid #334155',
+                paddingBottom: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span>✅</span>
+                <span>Strengths</span>
+              </h3>
+              <div style={{
+                padding: '20px',
+                backgroundColor: '#064e3b20',
+                borderRadius: '12px',
+                border: '1px solid #4ade80'
+              }}>
+                <ul style={{ 
+                  margin: 0, 
+                  paddingLeft: '24px', 
+                  color: '#cbd5e1',
+                  listStyle: 'none'
+                }}>
+                  {strengths.map((strength, idx) => (
+                    <li 
+                      key={idx} 
+                      style={{ 
+                        marginBottom: '12px',
+                        fontSize: '15px',
+                        lineHeight: '1.6',
+                        paddingLeft: '8px',
+                        position: 'relative'
+                      }}
+                    >
+                      <span style={{
+                        position: 'absolute',
+                        left: '-20px',
+                        color: '#4ade80',
+                        fontWeight: '700'
+                      }}>✓</span>
+                      {strength}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+          
+          {/* Coaching Items */}
+          {coaching_items && coaching_items.length > 0 && (
+            <div style={{ marginBottom: '32px' }}>
+              <h3 style={{ 
+                color: '#fbbf24', 
+                marginBottom: '16px', 
+                fontSize: '20px',
+                fontWeight: '600',
+                borderBottom: '2px solid #334155',
+                paddingBottom: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span>📈</span>
+                <span>Areas for Improvement</span>
+              </h3>
+              <div style={{
+                padding: '20px',
+                backgroundColor: '#78350f20',
+                borderRadius: '12px',
+                border: '1px solid #fbbf24'
+              }}>
+                <ul style={{ 
+                  margin: 0, 
+                  paddingLeft: '24px', 
+                  color: '#cbd5e1',
+                  listStyle: 'none'
+                }}>
+                  {coaching_items.map((item, idx) => (
+                    <li 
+                      key={idx} 
+                      style={{ 
+                        marginBottom: '12px',
+                        fontSize: '15px',
+                        lineHeight: '1.6',
+                        paddingLeft: '8px',
+                        position: 'relative'
+                      }}
+                    >
+                      <span style={{
+                        position: 'absolute',
+                        left: '-20px',
+                        color: '#fbbf24',
+                        fontWeight: '700'
+                      }}>→</span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+          
+          {/* Close Button */}
+          <div style={{ 
+            display: 'flex', 
+            gap: '12px',
+            marginTop: '32px',
+            paddingTop: '24px',
+            borderTop: '2px solid #334155'
+          }}>
+            <button
+              onClick={handleCloseScoreModal}
+              style={{
+                flex: 1,
+                padding: '16px 32px',
+                backgroundColor: '#3b82f6',
+                color: 'white',
+                border: 'none',
+                borderRadius: '12px',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseOver={(e) => {
+                e.target.style.backgroundColor = '#2563eb';
+              }}
+              onMouseOut={(e) => {
+                e.target.style.backgroundColor = '#3b82f6';
+              }}
+            >
+              Close & Exit Interview
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="interview-container">
       <TranscriptionHandler />
+      <ScoreModal />
 
       {/* Complete Message Modal - Separate window in interview screen */}
       {showCompleteMessageModal && (

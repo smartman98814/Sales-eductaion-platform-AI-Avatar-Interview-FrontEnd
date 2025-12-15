@@ -13,6 +13,13 @@ export function Navbar({ isAuthenticated, onLogout }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
+  // Debug: Log user role for admin button visibility
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      console.log('Navbar - User:', { email: user.email, role: user.role, isAdmin: user?.role === 'admin' });
+    }
+  }, [isAuthenticated, user]);
+
   const handleLogout = () => {
     onLogout();
     setIsDropdownOpen(false);
@@ -50,12 +57,22 @@ export function Navbar({ isAuthenticated, onLogout }) {
               <h1>Home</h1>
             </div>
             {isAuthenticated && (
-              <button 
-                className="navbar-button navbar-button-dashboard"
-                onClick={() => navigate('/dashboard')}
-              >
-                Dashboard
-              </button>
+              <>
+                <button 
+                  className="navbar-button navbar-button-dashboard"
+                  onClick={() => navigate('/dashboard')}
+                >
+                  Dashboard
+                </button>
+                {user?.role === 'admin' && (
+                  <button 
+                    className="navbar-button navbar-button-admin"
+                    onClick={() => navigate('/admin')}
+                  >
+                    Admin Panel
+                  </button>
+                )}
+              </>
             )}
           </div>
 
